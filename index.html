@@ -19,7 +19,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script>
 const SUPABASE_URL="https://lanzjrbacwxgdzupxyxc.supabase.co";
 const SUPABASE_KEY="sb_publishable_oaPSAIG4DUgsSiTJ1J3UcA_DBCQ6XYa";
-let inviteMode=/type=(invite|recovery)/i.test(location.hash+" "+location.search);\nconst client=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+let inviteMode=/type=(invite|recovery)/i.test(location.hash+" "+location.search);
+const client=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);let data=[],editId=null,picFile=null,picUrl="",signed={};
 const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
