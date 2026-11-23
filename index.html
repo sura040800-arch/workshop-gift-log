@@ -20,6 +20,8 @@
 const SUPABASE_URL="https://lanzjrbacwxgdzupxyxc.supabase.co";
 const SUPABASE_KEY="sb_publishable_oaPSAIG4DUgsSiTJ1J3UcA_DBCQ6XYa";
 let inviteMode=/type=(invite|recovery)/i.test(location.hash+" "+location.search);
+const authError=new URLSearchParams(location.hash.replace(/^#/,"")).get("error_description");
+if(authError){setTimeout(()=>{$("loginMsg").textContent="招待リンクが無効または期限切れです。管理者に再招待を依頼してください。"},0)}
 const client=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);let data=[],editId=null,picFile=null,picUrl="",signed={};
 const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
@@ -31,7 +33,14 @@ async function loadRecords(){const {data:rows,error}=await client.from("gifts").
 async function refresh(){try{await loadRecords()}catch(e){alert("記録の読み込みに失敗しました："+e.message)}}
 $("setPasswordBtn").onclick=async()=>{const b=$("setPasswordBtn"),p=$("newPassword").value;if(p.length<8){$("inviteMsg").textContent="パスワードは8文字以上にしてください。";return}b.disabled=true;$("inviteMsg").textContent="設定中…";const {error}=await client.auth.updateUser({password:p});b.disabled=false;if(error){$("inviteMsg").textContent="設定できませんでした："+error.message;return}inviteMode=false;history.replaceState(null,"",location.pathname);$("inviteMsg").textContent="設定できました。アプリを開いています…";loginScreen(true);await refresh()};\n$("loginBtn").onclick=async()=>{const b=$("loginBtn");b.disabled=true;$("loginMsg").textContent="ログイン中…";const {error}=await client.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});b.disabled=false;if(error){$("loginMsg").textContent="ログインできませんでした。メールアドレスとパスワードを確認してください。";return}$("loginMsg").textContent=""};
 $("logoutBtn").onclick=async()=>{await client.auth.signOut();data=[];loginScreen(false)};
-client.auth.onAuthStateChange((event,session)=>{if(session&&inviteMode){loginScreen(false);$("loginCard").hidden=true;$("inviteCard").hidden=false}else if(session){loginScreen(true);setTimeout(refresh,0)}else{loginScreen(false);if(!inviteMode){$("loginCard").hidden=false;$("inviteCard").hidden=true}}});
+function applyAuthState(session,event=""){
+if(event==="PASSWORD_RECOVERY")inviteMode=true;
+if(session&&inviteMode){loginScreen(false);$("loginCard").hidden=true;$("inviteCard").hidden=false;$("inviteMsg").textContent="新しいパスワードを8文字以上で設定してください。"}
+else if(session){loginScreen(true);setTimeout(refresh,0)}
+else{loginScreen(false);$("loginCard").hidden=false;$("inviteCard").hidden=true}
+}
+client.auth.onAuthStateChange((event,session)=>applyAuthState(session,event));
+client.auth.getSession().then(({data:{session}})=>applyAuthState(session,"INITIAL_SESSION"));
 $("date").value=today();
 $("lookup").onclick=async()=>{let z=$("postal").value.replace(/\D/g,"");$("zipmsg").textContent="検索中…";if(!/^\d{7}$/.test(z)){$("zipmsg").textContent="郵便番号は7桁で入力してください。";return}try{let j=await(await fetch("https://zipcloud.ibsnet.co.jp/api/search?zipcode="+z)).json();if(!j.results)throw 0;let a=j.results[0];$("address").value=a.address1+a.address2+a.address3;$("zipmsg").textContent="住所を入力しました。番地などを追記してください。"}catch{$("zipmsg").textContent="住所が見つからないか、通信に失敗しました。"}};
 $("photo").onchange=e=>{picFile=e.target.files[0]||null;if(!picFile)return;if(picFile.size>5*1024*1024){alert("写真は5MB以下にしてください。");e.target.value="";picFile=null;return}const u=URL.createObjectURL(picFile);$("preview").src=u;$("preview").hidden=false};
