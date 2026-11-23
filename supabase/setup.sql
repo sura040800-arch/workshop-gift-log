@@ -1,64 +1,38 @@
--- Gift log shared workspace setup
--- Run this in Supabase SQL Editor after creating the project.
+-- Workshop gift log: current schema and private photo storage.
+-- The gifts table already exists in the current project. This script is safe to rerun.
 create extension if not exists pgcrypto;
 
-create table if not exists public.gift_records (
+create table if not exists public.gifts (
   id uuid primary key default gen_random_uuid(),
-  item text not null,
-  customer text not null,
-  received_date date not null,
+  item_name text not null,
+  customer_name text,
+  received_date date not null default current_date,
   quantity text,
   postal_code text,
   address text,
   phone text,
   received_by text,
   photo_path text,
-  thank_you_status text not null default 'pending'
-    check (thank_you_status in ('pending', 'done')),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  thank_you_sent boolean not null default false,
+  created_at timestamptz not null default now()
 );
 
-alter table public.gift_records enable row level security;
+alter table public.gifts enable row level security;
+drop policy if exists "Authenticated staff can manage gifts" on public.gifts;
+create policy "Authenticated staff can manage gifts"
+  on public.gifts for all to authenticated
+  using (true) with check (true);
+grant select, insert, update, delete on public.gifts to authenticated;
 
-drop policy if exists "Signed-in staff can read gift records" on public.gift_records;
-create policy "Signed-in staff can read gift records"
-  on public.gift_records for select to authenticated using (true);
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('gift-photos', 'gift-photos', false, 5242880)
+on conflict (id) do update set public = false, file_size_limit = 5242880;
 
-drop policy if exists "Signed-in staff can add gift records" on public.gift_records;
-create policy "Signed-in staff can add gift records"
-  on public.gift_records for insert to authenticated with check (true);
-
-drop policy if exists "Signed-in staff can update gift records" on public.gift_records;
-create policy "Signed-in staff can update gift records"
-  on public.gift_records for update to authenticated using (true) with check (true);
-
-drop policy if exists "Signed-in staff can delete gift records" on public.gift_records;
-create policy "Signed-in staff can delete gift records"
-  on public.gift_records for delete to authenticated using (true);
-
-grant select, insert, update, delete on public.gift_records to authenticated;
-
-insert into storage.buckets (id, name, public)
-values ('gift-photos', 'gift-photos', false)
-on conflict (id) do update set public = false;
-
-drop policy if exists "Signed-in staff can view gift photos" on storage.objects;
-create policy "Signed-in staff can view gift photos"
-  on storage.objects for select to authenticated
-  using (bucket_id = 'gift-photos');
-
-drop policy if exists "Signed-in staff can upload gift photos" on storage.objects;
-create policy "Signed-in staff can upload gift photos"
-  on storage.objects for insert to authenticated
+drop policy if exists "Authenticated staff can manage gift photos" on storage.objects;
+create policy "Authenticated staff can manage gift photos"
+  on storage.objects for all to authenticated
+  using (bucket_id = 'gift-photos')
   with check (bucket_id = 'gift-photos');
 
-drop policy if exists "Signed-in staff can update gift photos" on storage.objects;
-create policy "Signed-in staff can update gift photos"
-  on storage.objects for update to authenticated
-  using (bucket_id = 'gift-photos') with check (bucket_id = 'gift-photos');
-
-drop policy if exists "Signed-in staff can delete gift photos" on storage.objects;
-create policy "Signed-in staff can delete gift photos"
-  on storage.objects for delete to authenticated
-  using (bucket_id = 'gift-photos');
+-- IMPORTANT: Disable public user sign-ups in Supabase Authentication settings.
+-- Invite only the staff members who should access customer information.
