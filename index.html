@@ -5,7 +5,7 @@
 </style></head><body>
 <header><small>WORKSHOP · GIFT RECORD</small><h1>いただき物管理</h1><p>お客様からいただいた品物と、お礼状の記録</p></header>
 <main>
-<section id="loginView" class="view active"><div class="card"><h2>スタッフログイン</h2><p class="hint">招待されたスタッフのメールアドレスとパスワードでログインしてください。</p><label>メールアドレス</label><input id="email" type="email" autocomplete="username"><label>パスワード</label><input id="password" type="password" autocomplete="current-password"><button class="primary" id="loginBtn">ログイン</button><p id="loginMsg" class="hint"></p></div></section>
+<section id="loginView" class="view active"><div class="card" id="loginCard"><h2>スタッフログイン</h2><p class="hint">招待されたスタッフのメールアドレスとパスワードでログインしてください。</p><label>メールアドレス</label><input id="email" type="email" autocomplete="username"><label>パスワード</label><input id="password" type="password" autocomplete="current-password"><button class="primary" id="loginBtn">ログイン</button><p id="loginMsg" class="hint"></p></div><div class="card" id="inviteCard" hidden><h2>初回パスワード設定</h2><p class="hint">招待を受けたスタッフは、ここで自分のパスワードを設定してください。</p><label>新しいパスワード</label><input id="newPassword" type="password" autocomplete="new-password" minlength="8"><button class="primary" id="setPasswordBtn">パスワードを設定</button><p id="inviteMsg" class="hint"></p></div></section>
 <div id="app" hidden><nav><button class="active" data-v="list">一覧・検索</button><button data-v="form">＋ 新規登録</button><button id="logoutBtn">ログアウト</button></nav>
 <main>
 <section id="list" class="view active"><div class="card"><h2>記録の一覧</h2><label>キーワード検索</label><input id="search" placeholder="品物・お客様・受取担当者"></div><div id="records"></div><div class="card"><p class="hint">記録と写真はクラウドに保存され、ログインしたスタッフ間で共有されます。</p><button class="secondary" id="backup" style="width:100%">バックアップ出力</button></div></section>
@@ -19,7 +19,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script>
 const SUPABASE_URL="https://lanzjrbacwxgdzupxyxc.supabase.co";
 const SUPABASE_KEY="sb_publishable_oaPSAIG4DUgsSiTJ1J3UcA_DBCQ6XYa";
-const client=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+let inviteMode=/type=(invite|recovery)/i.test(location.hash+" "+location.search);\nconst client=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);let data=[],editId=null,picFile=null,picUrl="",signed={};
 const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -28,9 +28,9 @@ document.querySelectorAll("nav [data-v]").forEach(b=>b.onclick=()=>{if(b.dataset
 function loginScreen(on){$("loginView").classList.toggle("active",!on);$("app").hidden=!on;if(!on)$("loginView").style.display="block";else $("loginView").style.display="none"}
 async function loadRecords(){const {data:rows,error}=await client.from("gifts").select("*").order("received_date",{ascending:false}).order("created_at",{ascending:false});if(error)throw error;data=rows||[];signed={};await Promise.all(data.filter(x=>x.photo_path).map(async x=>{const {data:d,error:e}=await client.storage.from("gift-photos").createSignedUrl(x.photo_path,3600);if(!e&&d?.signedUrl)signed[x.id]=d.signedUrl}));render()}
 async function refresh(){try{await loadRecords()}catch(e){alert("記録の読み込みに失敗しました："+e.message)}}
-$("loginBtn").onclick=async()=>{const b=$("loginBtn");b.disabled=true;$("loginMsg").textContent="ログイン中…";const {error}=await client.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});b.disabled=false;if(error){$("loginMsg").textContent="ログインできませんでした。メールアドレスとパスワードを確認してください。";return}$("loginMsg").textContent=""};
+$("setPasswordBtn").onclick=async()=>{const b=$("setPasswordBtn"),p=$("newPassword").value;if(p.length<8){$("inviteMsg").textContent="パスワードは8文字以上にしてください。";return}b.disabled=true;$("inviteMsg").textContent="設定中…";const {error}=await client.auth.updateUser({password:p});b.disabled=false;if(error){$("inviteMsg").textContent="設定できませんでした："+error.message;return}inviteMode=false;history.replaceState(null,"",location.pathname);$("inviteMsg").textContent="設定できました。アプリを開いています…";loginScreen(true);await refresh()};\n$("loginBtn").onclick=async()=>{const b=$("loginBtn");b.disabled=true;$("loginMsg").textContent="ログイン中…";const {error}=await client.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});b.disabled=false;if(error){$("loginMsg").textContent="ログインできませんでした。メールアドレスとパスワードを確認してください。";return}$("loginMsg").textContent=""};
 $("logoutBtn").onclick=async()=>{await client.auth.signOut();data=[];loginScreen(false)};
-client.auth.onAuthStateChange((event,session)=>{if(session){loginScreen(true);setTimeout(refresh,0)}else loginScreen(false)});
+client.auth.onAuthStateChange((event,session)=>{if(session&&inviteMode){loginScreen(false);$("loginCard").hidden=true;$("inviteCard").hidden=false}else if(session){loginScreen(true);setTimeout(refresh,0)}else{loginScreen(false);if(!inviteMode){$("loginCard").hidden=false;$("inviteCard").hidden=true}}});
 $("date").value=today();
 $("lookup").onclick=async()=>{let z=$("postal").value.replace(/\D/g,"");$("zipmsg").textContent="検索中…";if(!/^\d{7}$/.test(z)){$("zipmsg").textContent="郵便番号は7桁で入力してください。";return}try{let j=await(await fetch("https://zipcloud.ibsnet.co.jp/api/search?zipcode="+z)).json();if(!j.results)throw 0;let a=j.results[0];$("address").value=a.address1+a.address2+a.address3;$("zipmsg").textContent="住所を入力しました。番地などを追記してください。"}catch{$("zipmsg").textContent="住所が見つからないか、通信に失敗しました。"}};
 $("photo").onchange=e=>{picFile=e.target.files[0]||null;if(!picFile)return;if(picFile.size>5*1024*1024){alert("写真は5MB以下にしてください。");e.target.value="";picFile=null;return}const u=URL.createObjectURL(picFile);$("preview").src=u;$("preview").hidden=false};
