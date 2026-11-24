@@ -32,7 +32,7 @@
 <div class="span2"><label>お客様の住所</label><textarea id="address" placeholder="番地・建物名を追記"></textarea></div><div><label>お客様の電話番号</label><input id="phone" type="tel" placeholder="075-000-0000"></div><div><label>受け取った人</label><input id="receiver" placeholder="スタッフ名"></div>
 <div class="span2"><label>頂き物の処遇</label><textarea id="disposition" placeholder="例：工房で保管、展示に使用、スタッフに配布 など"></textarea></div><div class="span2"><label>備考</label><textarea id="notes" placeholder="その他の補足や申し送り"></textarea></div><div class="span2"><label>実物の写真</label><div class="photo"><input id="photo" type="file" accept="image/*" capture="environment"><img id="preview" hidden><p id="photoMsg" class="hint">写真は保存前に自動圧縮されます。元写真は15MB以下。</p></div></div><div class="span2"><label>お礼状</label><select id="thanks"><option value="pending">未送付</option><option value="done">送付済み</option></select></div></div><button class="primary" id="saveBtn">保存する</button><button class="secondary" type="button" id="clear" style="width:100%;margin-top:8px">入力をクリア</button></form></div></section>
 <section id="detail" class="view"><div class="card" id="detailBody"></div><button class="secondary" id="back" style="width:100%">一覧に戻る</button></section>
-<section id="admin" class="view"><div class="card"><h2>スタッフ管理</h2><p class="hint">メールアドレスを入力すると、スタッフに招待メールを送信します。</p><label>招待するスタッフのメールアドレス</label><input id="staffInviteEmail" type="email" placeholder="staff@example.com" autocomplete="email"><button class="primary" id="inviteStaffBtn" style="margin-top:10px">スタッフを招待</button><p id="inviteStaffMsg" class="hint"></p><button class="secondary" id="reloadStaff" style="width:100%;margin-top:10px">スタッフ一覧を更新</button><div id="staffRows" style="margin-top:12px"></div></div><div class="card"><h2>クラウド使用量</h2><p class="hint">管理者だけが確認できます。写真保存容量とデータベース容量を表示します。</p><button class="secondary" id="usageReload" style="width:100%">使用量を更新</button><div id="usageView" class="hint" style="margin-top:12px">未取得</div><button class="secondary" id="restoreBackup" type="button" style="width:100%;margin-top:12px">バックアップから復元</button><input id="restoreFile" type="file" accept="application/json,.json" hidden></div></div></section>
+<section id="admin" class="view"><div class="card"><h2>スタッフ管理</h2><p class="hint">メールアドレスを入力すると、スタッフに招待メールを送信します。</p><label>招待するスタッフのメールアドレス</label><input id="staffInviteEmail" type="email" placeholder="staff@example.com" autocomplete="email"><button class="primary" id="inviteStaffBtn" style="margin-top:10px">スタッフを招待</button><p id="inviteStaffMsg" class="hint"></p><button class="secondary" id="reloadStaff" style="width:100%;margin-top:10px">スタッフ一覧を更新</button><div id="staffRows" style="margin-top:12px"></div></div><div class="card"><h2>クラウド使用量</h2><p class="hint">管理者だけが確認できます。写真保存容量とデータベース容量を表示します。</p><button class="secondary" id="usageReload" style="width:100%">使用量を更新</button><div id="usageView" class="hint" style="margin-top:12px">未取得</div><button class="secondary" id="restoreBackup" type="button" style="width:100%;margin-top:12px">バックアップから復元</button><input id="restoreFile" type="file" accept="application/json,.json" hidden><div style="border-top:1px solid #ddd;margin-top:18px;padding-top:16px"><h3>古い記録をまとめて削除</h3><p class="hint">指定日より前の記録をまとめて削除します。写真も一緒に削除されます。削除後は元に戻せません。</p><label for="bulkDeleteBefore">この日付より前の記録を削除</label><input id="bulkDeleteBefore" type="date"><button class="secondary" id="bulkDeletePreview" type="button" style="width:100%;margin-top:10px">削除対象を確認</button><p id="bulkDeleteInfo" class="hint" style="white-space:pre-line;margin-top:10px">日付を選んで削除対象を確認してください。</p><button class="secondary" id="bulkDeleteRun" type="button" disabled style="width:100%;margin-top:8px;color:#a22">対象をまとめて削除</button></div></div></div></section>
 </main></div></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script>
 const SUPABASE_URL="https://lanzjrbacwxgdzupxyxc.supabase.co";
@@ -93,6 +93,48 @@ async function checkAdmin(){
 function formatBytes(n){const u=["B","KB","MB","GB","TB"];let i=0,v=n||0;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i>=2?2:1)+" "+u[i]}
 async function loadUsage(){const box=$("usageView");box.textContent="取得中…";const {data,error}=await client.rpc("get_gift_storage_usage");if(error){box.textContent="容量を取得できません。Supabaseで容量確認用SQLを実行してください。";return}const s=data.storage_used_bytes||0,sl=data.storage_limit_bytes||1073741824,d=data.database_used_bytes||0,dl=data.database_limit_bytes||524288000;const p1=Math.round(s/sl*100),p2=Math.round(d/dl*100);box.textContent="写真："+formatBytes(s)+" / "+formatBytes(sl)+"（"+p1+"%）\nデータベース："+formatBytes(d)+" / "+formatBytes(dl)+"（"+p2+"%）\n確認："+new Date(data.measured_at).toLocaleString("ja-JP");if(p1>=80||p2>=80)box.textContent+="\n警告：容量が80%を超えています。"}
 $("usageReload").onclick=loadUsage;
+let bulkDeleteRows=[];
+$("bulkDeletePreview").onclick=async()=>{
+ const date=$("bulkDeleteBefore").value,info=$("bulkDeleteInfo"),run=$("bulkDeleteRun");
+ run.disabled=true;bulkDeleteRows=[];
+ if(!date){info.textContent="削除する基準日を選択してください。";return}
+ info.textContent="対象を確認中…";
+ try{
+  for(let offset=0;;offset+=500){
+   const {data:batch,error}=await client.from("gifts").select("id,item_name,received_date,photo_path").lt("received_date",date).order("received_date").range(offset,offset+499);
+   if(error)throw error;
+   bulkDeleteRows.push(...(batch||[]));
+   if(!batch||batch.length<500)break;
+  }
+  const photos=bulkDeleteRows.filter(x=>x.photo_path).length;
+  info.textContent="削除対象："+bulkDeleteRows.length+"件\n写真あり："+photos+"件\n基準日："+date+" より前";
+  run.disabled=bulkDeleteRows.length===0;
+ }catch(e){bulkDeleteRows=[];info.textContent="確認できませんでした："+e.message}
+};
+$("bulkDeleteRun").onclick=async()=>{
+ const date=$("bulkDeleteBefore").value,rows=bulkDeleteRows.slice(),info=$("bulkDeleteInfo"),run=$("bulkDeleteRun");
+ if(!date||!rows.length)return;
+ if(!confirm("本当に削除しますか？\n\n"+date+"より前の記録 "+rows.length+"件と写真を削除します。\nこの操作は元に戻せません。"))return;
+ if(!confirm("最終確認：対象 "+rows.length+"件を完全に削除します。続けますか？"))return;
+ run.disabled=true;info.textContent="削除中…";
+ try{
+  const ids=rows.map(x=>x.id);
+  for(let i=0;i<ids.length;i+=100){
+   const {error}=await client.from("gifts").delete().in("id",ids.slice(i,i+100));
+   if(error)throw error;
+  }
+  const paths=rows.map(x=>x.photo_path).filter(Boolean);
+  let photoErrors=[];
+  for(let i=0;i<paths.length;i+=100){
+   const {error}=await client.storage.from("gift-photos").remove(paths.slice(i,i+100));
+   if(error)photoErrors.push(error.message);
+  }
+  bulkDeleteRows=[];$("bulkDeleteBefore").value="";info.textContent="記録 "+rows.length+"件を削除しました。"+(photoErrors.length?"\n写真の一部削除に失敗しました。容量確認画面で残量を確認してください。":"\n写真も削除しました。");
+  pageIndex=0;await refresh();await loadUsage();
+ }catch(e){info.textContent="削除処理中にエラーが発生しました："+e.message+"\n一部だけ削除済みの可能性があります。対象を再確認してください。"}
+ finally{run.disabled=true}
+};
+
 async function loadStaff(){
   const box=$("staffRows");box.textContent="読み込み中…";
   const {data:rows,error}=await client.from("staff_profiles").select("user_id,email,role,is_active,created_at").order("created_at");
