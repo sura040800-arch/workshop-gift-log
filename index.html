@@ -8,7 +8,7 @@
 <section id="loginView" class="view active"><div class="card" id="loginCard"><h2>スタッフログイン</h2><p class="hint">招待されたスタッフのメールアドレスとパスワードでログインしてください。</p><label>メールアドレス</label><input id="email" type="email" autocomplete="username"><label>パスワード</label><input id="password" type="password" autocomplete="current-password"><button class="primary" id="loginBtn">ログイン</button><p id="loginMsg" class="hint"></p></div><div class="card" id="inviteCard" hidden><h2>初回パスワード設定</h2><p class="hint">招待を受けたスタッフは、ここで自分のパスワードを設定してください。</p><label>新しいパスワード</label><input id="newPassword" type="password" autocomplete="new-password" minlength="8"><button class="primary" id="setPasswordBtn">パスワードを設定</button><p id="inviteMsg" class="hint"></p></div></section>
 <div id="app" hidden><nav><button class="active" data-v="list">一覧・検索</button><button data-v="form">＋ 新規登録</button><button id="adminNav" data-v="admin" hidden>スタッフ管理</button><button id="logoutBtn">ログアウト</button></nav>
 <main>
-<section id="list" class="view active"><div class="card"><h2>記録の一覧</h2><label>キーワード検索</label><input id="search" placeholder="品物・お客様・受取担当者"><button class="secondary" id="reloadRecords" type="button" style="width:100%;margin-top:10px">最新の記録を読み込む</button></div><div id="records"></div><div class="card"><p class="hint">記録と写真はクラウドに保存され、ログインしたスタッフ間で共有されます。</p><button class="secondary" id="backup" style="width:100%">バックアップ出力</button></div></section>
+<section id="list" class="view active"><div class="card"><h2>記録の一覧</h2><label>キーワード検索</label><input id="search" placeholder="品物・お客様・受取担当者"><p class="hint" style="margin:8px 0 0">記録は30秒ごとに自動更新されます。</p></div><div id="records"></div><div class="card"><p class="hint">記録と写真はクラウドに保存され、ログインしたスタッフ間で共有されます。</p><button class="secondary" id="backup" style="width:100%">バックアップ出力</button></div></section>
 <section id="form" class="view"><div class="card"><h2 id="formTitle">いただき物を登録</h2><p class="hint">必須：品物・お客様・いただいた日</p><form id="giftForm"><div class="formgrid">
 <div><label>品物 *</label><input id="item" required placeholder="例：焼き菓子"></div><div><label>お客様 *</label><input id="customer" required placeholder="お客様のお名前"></div><div><label>いただいた日 *</label><input id="date" type="date" required></div><div><label>数量</label><input id="quantity" placeholder="例：2箱"></div>
 <div class="span2"><label>お客様の郵便番号</label><div class="row"><input class="grow" id="postal" inputmode="numeric" placeholder="6170002"><button class="secondary" type="button" id="lookup">住所検索</button></div><div id="zipmsg" class="hint">郵便番号7桁で検索できます。</div></div>
@@ -32,9 +32,20 @@ document.querySelectorAll("nav [data-v]").forEach(b=>b.onclick=()=>{if(b.dataset
 function loginScreen(on){$("loginView").classList.toggle("active",!on);$("app").hidden=!on;if(!on)$("loginView").style.display="block";else $("loginView").style.display="none"}
 async function loadRecords(){const {data:rows,error}=await client.from("gifts").select("*").order("received_date",{ascending:false}).order("created_at",{ascending:false});if(error)throw error;data=rows||[];signed={};await Promise.all(data.filter(x=>x.photo_path).map(async x=>{const {data:d,error:e}=await client.storage.from("gift-photos").createSignedUrl(x.photo_path,3600);if(!e&&d?.signedUrl)signed[x.id]=d.signedUrl}));render()}
 async function refresh(){try{await loadRecords()}catch(e){alert("記録の読み込みに失敗しました："+e.message)}}
-$("setPasswordBtn").onclick=async()=>{const b=$("setPasswordBtn"),p=$("newPassword").value;if(p.length<8){$("inviteMsg").textContent="パスワードは8文字以上にしてください。";return}b.disabled=true;$("inviteMsg").textContent="設定中…";const {error}=await client.auth.updateUser({password:p});b.disabled=false;if(error){$("inviteMsg").textContent="設定できませんでした："+error.message;return}inviteMode=false;history.replaceState(null,"",location.pathname);$("inviteMsg").textContent="設定できました。アプリを開いています…";loginScreen(true);await refresh()};
+let autoRefreshTimer=null;
+function startAutoRefresh(){
+  if(autoRefreshTimer)clearInterval(autoRefreshTimer);
+  autoRefreshTimer=setInterval(async()=>{
+    if(document.hidden||$("app").hidden)return;
+    if(!$("list").classList.contains("active"))return;
+    try{await loadRecords()}catch(e){console.warn("自動更新に失敗しました",e)}
+  },30000);
+}
+function stopAutoRefresh(){if(autoRefreshTimer){clearInterval(autoRefreshTimer);autoRefreshTimer=null}}
+
+$("setPasswordBtn").onclick=async()=>{const b=$("setPasswordBtn"),p=$("newPassword").value;if(p.length<8){$("inviteMsg").textContent="パスワードは8文字以上にしてください。";return}b.disabled=true;$("inviteMsg").textContent="設定中…";const {error}=await client.auth.updateUser({password:p});b.disabled=false;if(error){$("inviteMsg").textContent="設定できませんでした："+error.message;return}inviteMode=false;history.replaceState(null,"",location.pathname);$("inviteMsg").textContent="設定できました。アプリを開いています…";loginScreen(true);await refresh();startAutoRefresh()};
 $("loginBtn").onclick=async()=>{const b=$("loginBtn");b.disabled=true;$("loginMsg").textContent="ログイン中…";const {error}=await client.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});b.disabled=false;if(error){$("loginMsg").textContent="ログインできませんでした。メールアドレスとパスワードを確認してください。";return}$("loginMsg").textContent=""};
-$("logoutBtn").onclick=async()=>{await client.auth.signOut();data=[];loginScreen(false)};
+$("logoutBtn").onclick=async()=>{await client.auth.signOut();stopAutoRefresh();data=[];loginScreen(false)};
 async function checkAdmin(){
   const {data:{user}}=await client.auth.getUser();
   if(!user){$("adminNav").hidden=true;return}
@@ -75,8 +86,8 @@ document.querySelector('nav [data-v="admin"]').onclick=async()=>{show("admin");a
 function applyAuthState(session,event=""){
 if(event==="PASSWORD_RECOVERY")inviteMode=true;
 if(session&&inviteMode){loginScreen(false);$("loginCard").hidden=true;$("inviteCard").hidden=false;$("inviteMsg").textContent="新しいパスワードを8文字以上で設定してください。"}
-else if(session){loginScreen(true);setTimeout(async()=>{const ok=await checkAdmin();if(ok!==false)refresh()},0)}
-else{loginScreen(false);$("adminNav").hidden=true;$("loginCard").hidden=false;$("inviteCard").hidden=true}
+else if(session){loginScreen(true);setTimeout(async()=>{const ok=await checkAdmin();if(ok!==false){await refresh();startAutoRefresh()}},0)}
+else{stopAutoRefresh();loginScreen(false);$("adminNav").hidden=true;$("loginCard").hidden=false;$("inviteCard").hidden=true}
 }
 client.auth.onAuthStateChange((event,session)=>applyAuthState(session,event));
 client.auth.getSession().then(({data:{session}})=>applyAuthState(session,"INITIAL_SESSION"));
