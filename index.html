@@ -32,7 +32,7 @@
 <div class="span2"><label>お客様の住所</label><textarea id="address" placeholder="番地・建物名を追記"></textarea></div><div><label>お客様の電話番号</label><input id="phone" type="tel" placeholder="075-000-0000"></div><div><label>受け取った人</label><input id="receiver" placeholder="スタッフ名"></div>
 <div class="span2"><label>実物の写真</label><div class="photo"><input id="photo" type="file" accept="image/*" capture="environment"><img id="preview" hidden><p class="hint">写真は5MB以下。非公開ストレージに保存されます。</p></div></div><div class="span2"><label>お礼状</label><select id="thanks"><option value="pending">未送付</option><option value="done">送付済み</option></select></div></div><button class="primary" id="saveBtn">保存する</button><button class="secondary" type="button" id="clear" style="width:100%;margin-top:8px">入力をクリア</button></form></div></section>
 <section id="detail" class="view"><div class="card" id="detailBody"></div><button class="secondary" id="back" style="width:100%">一覧に戻る</button></section>
-<section id="admin" class="view"><div class="card"><h2>スタッフ管理</h2><p class="hint">スタッフの権限を管理できます。新しいアカウントの招待はSupabaseの認証画面から行います。</p><button class="secondary" id="reloadStaff" style="width:100%">一覧を更新</button><div id="staffRows" style="margin-top:12px"></div></div></section>
+<section id="admin" class="view"><div class="card"><h2>スタッフ管理</h2><p class="hint">メールアドレスを入力すると、スタッフに招待メールを送信します。</p><label>招待するスタッフのメールアドレス</label><input id="staffInviteEmail" type="email" placeholder="staff@example.com" autocomplete="email"><button class="primary" id="inviteStaffBtn" style="margin-top:10px">スタッフを招待</button><p id="inviteStaffMsg" class="hint"></p><button class="secondary" id="reloadStaff" style="width:100%;margin-top:10px">スタッフ一覧を更新</button><div id="staffRows" style="margin-top:12px"></div></div></section>
 </main></div></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script>
 const SUPABASE_URL="https://lanzjrbacwxgdzupxyxc.supabase.co";
@@ -97,6 +97,7 @@ async function loadStaff(){
     el.append(label,select,state,status,msg);box.append(el);
   });
 }
+$("inviteStaffBtn").onclick=async()=>{const btn=$("inviteStaffBtn"),email=$("staffInviteEmail").value.trim();if(!email){$("inviteStaffMsg").textContent="メールアドレスを入力してください。";return}btn.disabled=true;btn.textContent="招待メール送信中…";$("inviteStaffMsg").textContent="";try{const {data:result,error}=await client.functions.invoke("invite-staff",{body:{email}});if(error)throw error;if(result?.error)throw new Error(result.error);$("inviteStaffMsg").textContent=(result?.email||email)+" に招待メールを送信しました。";$("staffInviteEmail").value="";await loadStaff()}catch(e){$("inviteStaffMsg").textContent="招待できませんでした："+(e.message||"エラー");}finally{btn.disabled=false;btn.textContent="スタッフを招待"}};
 $("reloadStaff").onclick=loadStaff;
 document.querySelector('nav [data-v="admin"]').onclick=async()=>{show("admin");await loadStaff()};
 
