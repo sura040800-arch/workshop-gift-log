@@ -54,9 +54,10 @@ async function loadStaff(){
     const el=document.createElement("div");el.className="card";
     const label=document.createElement("div");label.style.fontWeight="700";label.textContent=row.email||"メールアドレス未登録";
     const select=document.createElement("select");select.innerHTML='<option value="staff">一般スタッフ</option><option value="admin">管理者</option>';select.value=row.role;
-    const status=document.createElement("button");status.className="secondary";status.style.width="100%";status.style.marginTop="8px";status.textContent=row.is_active?"利用中（停止する）":"停止中（再開する）";
+    const state=document.createElement("div");state.style.cssText="margin-top:12px;font-size:13px;font-weight:700;color:"+(row.is_active?"#24623b":"#a33")+";";state.textContent="利用状態："+(row.is_active?"利用中":"停止中");
+    const status=document.createElement("button");status.type="button";status.className="secondary";status.style.cssText="display:block;width:100%;margin-top:8px;min-height:44px;";status.textContent=row.is_active?"このスタッフを利用停止":"このスタッフの利用を再開";
     const msg=document.createElement("p");msg.className="hint";
-    status.onclick=async()=>{if(row.user_id=== (await client.auth.getUser()).data.user?.id && row.is_active){msg.textContent="自分自身はここから停止できません。";return}status.disabled=true;msg.textContent="更新中…";const next=!row.is_active;const {error}=await client.from("staff_profiles").update({is_active:next}).eq("user_id",row.user_id);status.disabled=false;if(error){msg.textContent="変更できません："+error.message;return}row.is_active=next;status.textContent=next?"利用中（停止する）":"停止中（再開する）";msg.textContent="利用状態を更新しました。"};
+    status.onclick=async()=>{if(row.user_id===(await client.auth.getUser()).data.user?.id&&row.is_active){msg.textContent="自分自身はここから停止できません。";return}status.disabled=true;msg.textContent="更新中…";const next=!row.is_active;const {error}=await client.from("staff_profiles").update({is_active:next}).eq("user_id",row.user_id);status.disabled=false;if(error){msg.textContent="変更できません："+error.message;return}row.is_active=next;state.textContent="利用状態："+(next?"利用中":"停止中");state.style.color=next?"#24623b":"#a33";status.textContent=next?"このスタッフを利用停止":"このスタッフの利用を再開";msg.textContent="利用状態を更新しました。"};
     select.onchange=async()=>{
       select.disabled=true;msg.textContent="更新中…";
       const {error}=await client.from("staff_profiles").update({role:select.value}).eq("user_id",row.user_id);
@@ -65,7 +66,7 @@ async function loadStaff(){
       row.role=select.value;msg.textContent="権限を更新しました。";
       await checkAdmin();
     };
-    el.append(label,select,status,msg);box.append(el);
+    el.append(label,select,state,status,msg);box.append(el);
   });
 }
 $("reloadStaff").onclick=loadStaff;
