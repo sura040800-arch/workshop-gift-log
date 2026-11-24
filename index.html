@@ -6,7 +6,7 @@
 <header><small>WORKSHOP · GIFT RECORD</small><h1>いただき物管理</h1><p>お客様からいただいた品物と、お礼状の記録</p></header>
 <main>
 <section id="loginView" class="view active"><div class="card" id="loginCard"><h2>スタッフログイン</h2><p class="hint">招待されたスタッフのメールアドレスとパスワードでログインしてください。</p><label>メールアドレス</label><input id="email" type="email" autocomplete="username"><label>パスワード</label><input id="password" type="password" autocomplete="current-password"><button class="primary" id="loginBtn">ログイン</button><p id="loginMsg" class="hint"></p></div><div class="card" id="inviteCard" hidden><h2>初回パスワード設定</h2><p class="hint">招待を受けたスタッフは、ここで自分のパスワードを設定してください。</p><label>新しいパスワード</label><input id="newPassword" type="password" autocomplete="new-password" minlength="8"><button class="primary" id="setPasswordBtn">パスワードを設定</button><p id="inviteMsg" class="hint"></p></div></section>
-<div id="app" hidden><nav><button class="active" data-v="list">一覧・検索</button><button data-v="form">＋ 新規登録</button><button id="logoutBtn">ログアウト</button></nav>
+<div id="app" hidden><nav><button class="active" data-v="list">一覧・検索</button><button data-v="form">＋ 新規登録</button><button id="adminNav" data-v="admin" hidden>スタッフ管理</button><button id="logoutBtn">ログアウト</button></nav>
 <main>
 <section id="list" class="view active"><div class="card"><h2>記録の一覧</h2><label>キーワード検索</label><input id="search" placeholder="品物・お客様・受取担当者"></div><div id="records"></div><div class="card"><p class="hint">記録と写真はクラウドに保存され、ログインしたスタッフ間で共有されます。</p><button class="secondary" id="backup" style="width:100%">バックアップ出力</button></div></section>
 <section id="form" class="view"><div class="card"><h2 id="formTitle">いただき物を登録</h2><p class="hint">必須：品物・お客様・いただいた日</p><form id="giftForm"><div class="formgrid">
@@ -15,6 +15,7 @@
 <div class="span2"><label>お客様の住所</label><textarea id="address" placeholder="番地・建物名を追記"></textarea></div><div><label>お客様の電話番号</label><input id="phone" type="tel" placeholder="075-000-0000"></div><div><label>受け取った人</label><input id="receiver" placeholder="スタッフ名"></div>
 <div class="span2"><label>実物の写真</label><div class="photo"><input id="photo" type="file" accept="image/*" capture="environment"><img id="preview" hidden><p class="hint">写真は5MB以下。非公開ストレージに保存されます。</p></div></div><div class="span2"><label>お礼状</label><select id="thanks"><option value="pending">未送付</option><option value="done">送付済み</option></select></div></div><button class="primary" id="saveBtn">保存する</button><button class="secondary" type="button" id="clear" style="width:100%;margin-top:8px">入力をクリア</button></form></div></section>
 <section id="detail" class="view"><div class="card" id="detailBody"></div><button class="secondary" id="back" style="width:100%">一覧に戻る</button></section>
+<section id="admin" class="view"><div class="card"><h2>スタッフ管理</h2><p class="hint">スタッフの権限を管理できます。新しいアカウントの招待はSupabaseの認証画面から行います。</p><button class="secondary" id="reloadStaff" style="width:100%">一覧を更新</button><div id="staffRows" style="margin-top:12px"></div></div></section>
 </main></div></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script>
 const SUPABASE_URL="https://lanzjrbacwxgdzupxyxc.supabase.co";
@@ -33,11 +34,43 @@ async function loadRecords(){const {data:rows,error}=await client.from("gifts").
 async function refresh(){try{await loadRecords()}catch(e){alert("記録の読み込みに失敗しました："+e.message)}}
 $("setPasswordBtn").onclick=async()=>{const b=$("setPasswordBtn"),p=$("newPassword").value;if(p.length<8){$("inviteMsg").textContent="パスワードは8文字以上にしてください。";return}b.disabled=true;$("inviteMsg").textContent="設定中…";const {error}=await client.auth.updateUser({password:p});b.disabled=false;if(error){$("inviteMsg").textContent="設定できませんでした："+error.message;return}inviteMode=false;history.replaceState(null,"",location.pathname);$("inviteMsg").textContent="設定できました。アプリを開いています…";loginScreen(true);await refresh()};\n$("loginBtn").onclick=async()=>{const b=$("loginBtn");b.disabled=true;$("loginMsg").textContent="ログイン中…";const {error}=await client.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});b.disabled=false;if(error){$("loginMsg").textContent="ログインできませんでした。メールアドレスとパスワードを確認してください。";return}$("loginMsg").textContent=""};
 $("logoutBtn").onclick=async()=>{await client.auth.signOut();data=[];loginScreen(false)};
+async function checkAdmin(){
+  const {data:{user}}=await client.auth.getUser();
+  if(!user){$("adminNav").hidden=true;return}
+  const {data:profile,error}=await client.from("staff_profiles").select("role").eq("user_id",user.id).maybeSingle();
+  const isAdmin=!error&&profile?.role==="admin";
+  $("adminNav").hidden=!isAdmin;
+}
+async function loadStaff(){
+  const box=$("staffRows");box.textContent="読み込み中…";
+  const {data:rows,error}=await client.from("staff_profiles").select("user_id,email,role").order("created_at");
+  if(error){box.textContent="スタッフ一覧を取得できません："+error.message;return}
+  if(!rows?.length){box.textContent="スタッフはいません。";return}
+  box.innerHTML="";
+  rows.forEach(row=>{
+    const el=document.createElement("div");el.className="card";
+    const label=document.createElement("div");label.style.fontWeight="700";label.textContent=row.email||"メールアドレス未登録";
+    const select=document.createElement("select");select.innerHTML='<option value="staff">一般スタッフ</option><option value="admin">管理者</option>';select.value=row.role;
+    const msg=document.createElement("p");msg.className="hint";
+    select.onchange=async()=>{
+      select.disabled=true;msg.textContent="更新中…";
+      const {error}=await client.from("staff_profiles").update({role:select.value}).eq("user_id",row.user_id);
+      select.disabled=false;
+      if(error){msg.textContent="変更できません："+error.message;select.value=row.role;return}
+      row.role=select.value;msg.textContent="権限を更新しました。";
+      await checkAdmin();
+    };
+    el.append(label,select,msg);box.append(el);
+  });
+}
+$("reloadStaff").onclick=loadStaff;
+document.querySelector('nav [data-v="admin"]').onclick=async()=>{show("admin");await loadStaff()};
+
 function applyAuthState(session,event=""){
 if(event==="PASSWORD_RECOVERY")inviteMode=true;
 if(session&&inviteMode){loginScreen(false);$("loginCard").hidden=true;$("inviteCard").hidden=false;$("inviteMsg").textContent="新しいパスワードを8文字以上で設定してください。"}
-else if(session){loginScreen(true);setTimeout(refresh,0)}
-else{loginScreen(false);$("loginCard").hidden=false;$("inviteCard").hidden=true}
+else if(session){loginScreen(true);setTimeout(()=>{refresh();checkAdmin()},0)}
+else{loginScreen(false);$("adminNav").hidden=true;$("loginCard").hidden=false;$("inviteCard").hidden=true}
 }
 client.auth.onAuthStateChange((event,session)=>applyAuthState(session,event));
 client.auth.getSession().then(({data:{session}})=>applyAuthState(session,"INITIAL_SESSION"));
