@@ -32,7 +32,7 @@
 <div class="span2"><label>お客様の住所</label><textarea id="address" placeholder="番地・建物名を追記"></textarea></div><div><label>お客様の電話番号</label><input id="phone" type="tel" placeholder="075-000-0000"></div><div><label>受け取った人</label><input id="receiver" placeholder="スタッフ名"></div>
 <div class="span2"><label>頂き物の処遇</label><textarea id="disposition" placeholder="例：工房で保管、展示に使用、スタッフに配布 など"></textarea></div><div class="span2"><label>備考</label><textarea id="notes" placeholder="その他の補足や申し送り"></textarea></div><div class="span2"><label>実物の写真</label><div class="photo"><input id="photo" type="file" accept="image/*" capture="environment"><img id="preview" hidden><p class="hint">写真は5MB以下。非公開ストレージに保存されます。</p></div></div><div class="span2"><label>お礼状</label><select id="thanks"><option value="pending">未送付</option><option value="done">送付済み</option></select></div></div><button class="primary" id="saveBtn">保存する</button><button class="secondary" type="button" id="clear" style="width:100%;margin-top:8px">入力をクリア</button></form></div></section>
 <section id="detail" class="view"><div class="card" id="detailBody"></div><button class="secondary" id="back" style="width:100%">一覧に戻る</button></section>
-<section id="admin" class="view"><div class="card"><h2>スタッフ管理</h2><p class="hint">メールアドレスを入力すると、スタッフに招待メールを送信します。</p><label>招待するスタッフのメールアドレス</label><input id="staffInviteEmail" type="email" placeholder="staff@example.com" autocomplete="email"><button class="primary" id="inviteStaffBtn" style="margin-top:10px">スタッフを招待</button><p id="inviteStaffMsg" class="hint"></p><button class="secondary" id="reloadStaff" style="width:100%;margin-top:10px">スタッフ一覧を更新</button><div id="staffRows" style="margin-top:12px"></div></div><div class="card"><h2>クラウド使用量</h2><p class="hint">管理者だけが確認できます。写真保存容量とデータベース容量を表示します。</p><button class="secondary" id="usageReload" style="width:100%">使用量を更新</button><div id="usageView" class="hint" style="margin-top:12px">未取得</div></div></section>
+<section id="admin" class="view"><div class="card"><h2>スタッフ管理</h2><p class="hint">メールアドレスを入力すると、スタッフに招待メールを送信します。</p><label>招待するスタッフのメールアドレス</label><input id="staffInviteEmail" type="email" placeholder="staff@example.com" autocomplete="email"><button class="primary" id="inviteStaffBtn" style="margin-top:10px">スタッフを招待</button><p id="inviteStaffMsg" class="hint"></p><button class="secondary" id="reloadStaff" style="width:100%;margin-top:10px">スタッフ一覧を更新</button><div id="staffRows" style="margin-top:12px"></div></div><div class="card"><h2>クラウド使用量</h2><p class="hint">管理者だけが確認できます。写真保存容量とデータベース容量を表示します。</p><button class="secondary" id="usageReload" style="width:100%">使用量を更新</button><div id="usageView" class="hint" style="margin-top:12px">未取得</div><button class="secondary" id="usageReload" style="width:100%;margin-top:10px">容量を更新</button></div></div></section>
 </main></div></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script>
 const SUPABASE_URL="https://lanzjrbacwxgdzupxyxc.supabase.co";
@@ -90,6 +90,9 @@ async function checkAdmin(){
   $("adminNav").hidden=!isAdmin;
   return true;
 }
+function formatBytes(n){const u=["B","KB","MB","GB","TB"];let i=0,v=n||0;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i>=2?2:1)+" "+u[i]}
+async function loadUsage(){const box=$("usageView");box.textContent="取得中…";const {data,error}=await client.rpc("get_gift_storage_usage");if(error){box.textContent="容量を取得できません。Supabaseで容量確認用SQLを実行してください。";return}const s=data.storage_used_bytes||0,sl=data.storage_limit_bytes||1073741824,d=data.database_used_bytes||0,dl=data.database_limit_bytes||524288000;const p1=Math.round(s/sl*100),p2=Math.round(d/dl*100);box.textContent="写真："+formatBytes(s)+" / "+formatBytes(sl)+"（"+p1+"%）\nデータベース："+formatBytes(d)+" / "+formatBytes(dl)+"（"+p2+"%）\n確認："+new Date(data.measured_at).toLocaleString("ja-JP");if(p1>=80||p2>=80)box.textContent+="\n警告：容量が80%を超えています。"}
+$("usageReload").onclick=loadUsage;
 async function loadStaff(){
   const box=$("staffRows");box.textContent="読み込み中…";
   const {data:rows,error}=await client.from("staff_profiles").select("user_id,email,role,is_active,created_at").order("created_at");
@@ -117,7 +120,7 @@ async function loadStaff(){
 }
 $("inviteStaffBtn").onclick=async()=>{const btn=$("inviteStaffBtn"),email=$("staffInviteEmail").value.trim();if(!email){$("inviteStaffMsg").textContent="メールアドレスを入力してください。";return}btn.disabled=true;btn.textContent="招待メール送信中…";$("inviteStaffMsg").textContent="";try{const {data:result,error}=await client.functions.invoke("invite-staff",{body:{email}});if(error)throw error;if(result?.error)throw new Error(result.error);$("inviteStaffMsg").textContent=(result?.email||email)+" に招待メールを送信しました。";$("staffInviteEmail").value="";await loadStaff()}catch(e){$("inviteStaffMsg").textContent="招待できませんでした："+(e.message||"エラー");}finally{btn.disabled=false;btn.textContent="スタッフを招待"}};
 $("reloadStaff").onclick=loadStaff;
-document.querySelector('nav [data-v="admin"]').onclick=async()=>{show("admin");await loadStaff()};
+document.querySelector('nav [data-v="admin"]').onclick=async()=>{show("admin");await Promise.all([loadStaff(),loadUsage()])};
 
 function applyAuthState(session,event=""){
 if(event==="PASSWORD_RECOVERY")inviteMode=true;
