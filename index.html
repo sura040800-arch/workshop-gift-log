@@ -38,13 +38,15 @@ $("logoutBtn").onclick=async()=>{await client.auth.signOut();data=[];loginScreen
 async function checkAdmin(){
   const {data:{user}}=await client.auth.getUser();
   if(!user){$("adminNav").hidden=true;return}
-  const {data:profile,error}=await client.from("staff_profiles").select("role").eq("user_id",user.id).maybeSingle();
-  const isAdmin=!error&&profile?.role==="admin";
+  const {data:profile,error}=await client.from("staff_profiles").select("role,is_active").eq("user_id",user.id).maybeSingle();
+  if(error||!profile||!profile.is_active){$("adminNav").hidden=true;await client.auth.signOut();loginScreen(false);$("loginMsg").textContent="このアカウントは利用停止中、またはスタッフ登録がありません。管理者に確認してください。";return false}
+  const isAdmin=profile.role==="admin";
   $("adminNav").hidden=!isAdmin;
+  return true;
 }
 async function loadStaff(){
   const box=$("staffRows");box.textContent="読み込み中…";
-  const {data:rows,error}=await client.from("staff_profiles").select("user_id,email,role").order("created_at");
+  const {data:rows,error}=await client.from("staff_profiles").select("user_id,email,role,is_active,created_at").order("created_at");
   if(error){box.textContent="スタッフ一覧を取得できません："+error.message;return}
   if(!rows?.length){box.textContent="スタッフはいません。";return}
   box.innerHTML="";
@@ -52,7 +54,9 @@ async function loadStaff(){
     const el=document.createElement("div");el.className="card";
     const label=document.createElement("div");label.style.fontWeight="700";label.textContent=row.email||"メールアドレス未登録";
     const select=document.createElement("select");select.innerHTML='<option value="staff">一般スタッフ</option><option value="admin">管理者</option>';select.value=row.role;
+    const status=document.createElement("button");status.className="secondary";status.style.width="100%";status.style.marginTop="8px";status.textContent=row.is_active?"利用中（停止する）":"停止中（再開する）";
     const msg=document.createElement("p");msg.className="hint";
+    status.onclick=async()=>{if(row.user_id=== (await client.auth.getUser()).data.user?.id && row.is_active){msg.textContent="自分自身はここから停止できません。";return}status.disabled=true;msg.textContent="更新中…";const next=!row.is_active;const {error}=await client.from("staff_profiles").update({is_active:next}).eq("user_id",row.user_id);status.disabled=false;if(error){msg.textContent="変更できません："+error.message;return}row.is_active=next;status.textContent=next?"利用中（停止する）":"停止中（再開する）";msg.textContent="利用状態を更新しました。"};
     select.onchange=async()=>{
       select.disabled=true;msg.textContent="更新中…";
       const {error}=await client.from("staff_profiles").update({role:select.value}).eq("user_id",row.user_id);
@@ -61,7 +65,7 @@ async function loadStaff(){
       row.role=select.value;msg.textContent="権限を更新しました。";
       await checkAdmin();
     };
-    el.append(label,select,msg);box.append(el);
+    el.append(label,select,status,msg);box.append(el);
   });
 }
 $("reloadStaff").onclick=loadStaff;
@@ -70,7 +74,7 @@ document.querySelector('nav [data-v="admin"]').onclick=async()=>{show("admin");a
 function applyAuthState(session,event=""){
 if(event==="PASSWORD_RECOVERY")inviteMode=true;
 if(session&&inviteMode){loginScreen(false);$("loginCard").hidden=true;$("inviteCard").hidden=false;$("inviteMsg").textContent="新しいパスワードを8文字以上で設定してください。"}
-else if(session){loginScreen(true);setTimeout(()=>{refresh();checkAdmin()},0)}
+else if(session){loginScreen(true);setTimeout(async()=>{const ok=await checkAdmin();if(ok!==false)refresh()},0)}
 else{loginScreen(false);$("adminNav").hidden=true;$("loginCard").hidden=false;$("inviteCard").hidden=true}
 }
 client.auth.onAuthStateChange((event,session)=>applyAuthState(session,event));
