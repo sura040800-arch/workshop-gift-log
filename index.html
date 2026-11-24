@@ -44,7 +44,7 @@ const client=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);let data=[],editId=null,picFile=null,picUrl="",signed={},pageIndex=0,hasMore=false;const PAGE_SIZE=50;
 const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-function show(v){document.querySelectorAll("#app .view").forEach(x=>x.classList.toggle("active",x.id===v));document.querySelectorAll("nav [data-v]").forEach(x=>x.classList.toggle("active",x.dataset.v===v));window.scrollTo(0,0)}
+let currentIsAdmin=false;function show(v){if(v==="admin"&&!currentIsAdmin){v="list"}document.querySelectorAll("#app .view").forEach(x=>x.classList.toggle("active",x.id===v));document.querySelectorAll("nav [data-v]").forEach(x=>x.classList.toggle("active",x.dataset.v===v));window.scrollTo(0,0)}
 document.querySelectorAll("nav [data-v]").forEach(b=>b.onclick=()=>{if(b.dataset.v==="form")reset();show(b.dataset.v)});
 function loginScreen(on){$("loginView").classList.toggle("active",!on);$("app").hidden=!on;if(!on)$("loginView").style.display="block";else $("loginView").style.display="none"}
 async function loadRecords(){const start=pageIndex*PAGE_SIZE;const {data:rows,error}=await client.from("gifts").select("*").order("received_date",{ascending:false}).order("created_at",{ascending:false}).range(start,start+PAGE_SIZE);if(error)throw error;hasMore=(rows||[]).length>PAGE_SIZE;data=(rows||[]).slice(0,PAGE_SIZE);render()}
@@ -83,10 +83,12 @@ $("loginBtn").onclick=async()=>{const b=$("loginBtn");b.disabled=true;$("loginMs
 $("logoutBtn").onclick=async()=>{await client.auth.signOut();stopAutoRefresh();data=[];loginScreen(false)};
 async function checkAdmin(){
   const {data:{user}}=await client.auth.getUser();
-  if(!user){$("adminNav").hidden=true;return}
+  if(!user){currentIsAdmin=false;$("adminNav").hidden=true;$("admin").hidden=true;return}
   const {data:profile,error}=await client.from("staff_profiles").select("role,is_active").eq("user_id",user.id).maybeSingle();
-  if(error||!profile||!profile.is_active){$("adminNav").hidden=true;await client.auth.signOut();loginScreen(false);$("loginMsg").textContent="このアカウントは利用停止中、またはスタッフ登録がありません。管理者に確認してください。";return false}
+  if(error||!profile||!profile.is_active){currentIsAdmin=false;$("admin").hidden=true;$("adminNav").hidden=true;await client.auth.signOut();loginScreen(false);$("loginMsg").textContent="このアカウントは利用停止中、またはスタッフ登録がありません。管理者に確認してください。";return false}
   const isAdmin=profile.role==="admin";
+  currentIsAdmin=isAdmin;
+  $("admin").hidden=!isAdmin;
   $("adminNav").hidden=!isAdmin;
   return true;
 }
@@ -168,7 +170,7 @@ function applyAuthState(session,event=""){
 if(event==="PASSWORD_RECOVERY")inviteMode=true;
 if(session&&inviteMode){loginScreen(false);$("loginCard").hidden=true;$("inviteCard").hidden=false;$("inviteMsg").textContent="新しいパスワードを8文字以上で設定してください。"}
 else if(session){loginScreen(true);setTimeout(async()=>{const ok=await checkAdmin();if(ok!==false){await refresh();startAutoRefresh()}},0)}
-else{stopAutoRefresh();loginScreen(false);$("adminNav").hidden=true;$("loginCard").hidden=false;$("inviteCard").hidden=true}
+else{stopAutoRefresh();currentIsAdmin=false;$("admin").hidden=true;loginScreen(false);$("adminNav").hidden=true;$("loginCard").hidden=false;$("inviteCard").hidden=true}
 }
 client.auth.onAuthStateChange((event,session)=>applyAuthState(session,event));
 client.auth.getSession().then(({data:{session}})=>applyAuthState(session,"INITIAL_SESSION"));
