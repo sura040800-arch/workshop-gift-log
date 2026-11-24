@@ -103,3 +103,40 @@ on conflict (user_id) do update set email = excluded.email;
 
 -- NOTE: Gift records remain shared among authenticated staff.
 -- Only staff-role management is restricted to admins at the database level.
+
+
+-- Staff activation control. Inactive accounts cannot access gifts or photos.
+alter table public.staff_profiles
+  add column if not exists is_active boolean not null default true;
+
+create or replace function public.is_gift_staff_active()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.staff_profiles
+    where user_id = auth.uid() and is_active = true
+  );
+$$;
+
+grant execute on function public.is_gift_staff_active() to authenticated;
+grant update (role, is_active) on public.staff_profiles to authenticated;
+
+drop policy if exists "Authenticated staff can manage gifts" on public.gifts;
+drop policy if exists "Active staff can manage gifts" on public.gifts;
+create policy "Active staff can manage gifts"
+  on public.gifts for all to authenticated
+  using (public.is_gift_staff_active())
+  with check (public.is_gift_staff_active());
+
+drop policy if exists "Authenticated staff can manage gift photos" on storage.objects;
+drop policy if exists "Active staff can manage gift photos" on storage.objects;
+create policy "Active staff can manage gift photos"
+  on storage.objects for all to authenticated
+  using (bucket_id = 'gift-photos' and public.is_gift_staff_active())
+  with check (bucket_id = 'gift-photos' and public.is_gift_staff_active());
+
+-- Existing owner/admin remains active; newly invited users default to active staff.
