@@ -206,7 +206,7 @@ $("addressScanFile").onchange=async e=>{
   const raw=(result.data.text||"").replace(/\r/g,"\n");
   // 住所の文字列より郵便番号を優先。郵便番号データベースから町域まで自動入力する。
   const digits=raw.replace(/[０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0));
-  const postalMatch=digits.match(/(?:〒\\s*)?(\\d{3})\\s*[-ー－]?\\s*(\\d{4})/);
+const postalMatch=digits.match(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/);
   if(!postalMatch){
    msg.textContent="郵便番号を読み取れませんでした。郵便番号部分を大きく、明るく撮影してください。住所は手入力または郵便番号検索を使えます。";
    return;
