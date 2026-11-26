@@ -104,7 +104,7 @@ async function loadPostcardBack(){
  const {data,error}=await client.storage.from("postcard-back").createSignedUrl("current/back.jpg",3600);
  const img=$("postcardBackPreview"),status=$("postcardBackStatus");
  if(error||!data?.signedUrl){postcardBackUrl=null;if(img){img.hidden=true;img.removeAttribute("src")}if(status)status.textContent="裏面画像は未設定です。管理者が画像を登録してください。";return null}
- postcardBackUrl=data.signedUrl+"?t="+Date.now();
+ postcardBackUrl=data.signedUrl;
  if(img){img.src=postcardBackUrl;img.hidden=false}
  if(status)status.textContent="裏面画像を設定済みです。";
  return postcardBackUrl;
