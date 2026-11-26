@@ -280,6 +280,7 @@ function drawVerticalPdfText(ctx,text,x,top,maxHeight,fontPx,lineGapPx){
  if(/[-ｰ－︲]/.test(ch)){ctx.save();ctx.translate(colX,y);ctx.rotate(Math.PI/2);ctx.fillText("｜",0,0);ctx.restore()}else ctx.fillText(ch,colX,y);y+=fontPx*1.8}
 }
 async function createPostcardPdf(record){
+ if(!postcardBackUrl)throw new Error("ハガキ裏面画像が未設定です。管理者設定で裏面画像を登録してください。");
  const JsPDF=await loadJsPdf(),scale=10,w=1000,h=1480,canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
  const ctx=canvas.getContext("2d");ctx.fillStyle="#fff";ctx.fillRect(0,0,w,h);ctx.fillStyle="#111";
  const zip=String(record.postal_code||"").replace(/\D/g,"").slice(0,7);ctx.font="65px serif";ctx.textAlign="center";ctx.textBaseline="middle";
