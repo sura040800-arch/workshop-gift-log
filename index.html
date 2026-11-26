@@ -283,8 +283,8 @@ async function createPostcardPdf(record){
  if(!postcardBackUrl)throw new Error("ハガキ裏面画像が未設定です。管理者設定で裏面画像を登録してください。");
  const JsPDF=await loadJsPdf(),scale=10,w=1000,h=1480,canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
  const ctx=canvas.getContext("2d");ctx.fillStyle="#fff";ctx.fillRect(0,0,w,h);ctx.fillStyle="#111";
- const zip=String(record.postal_code||"").replace(/\D/g,"").slice(0,7);ctx.font="65px serif";ctx.textAlign="center";ctx.textBaseline="middle";
- for(let i=0;i<7;i++)ctx.fillText(zip[i]||"", (43.7+3.05+i*6.1)*scale,14.9*scale);
+ const zip=String(record.postal_code||"").replace(/\D/g,"").slice(0,7);ctx.font="58px serif";ctx.textAlign="center";ctx.textBaseline="middle";
+ for(let i=0;i<7;i++)ctx.fillText(zip[i]||"", (44.3+3.1+i*7.05)*scale,15.2*scale);
  const kanji={"0":"〇","1":"一","2":"二","3":"三","4":"四","5":"五","6":"六","7":"七","8":"八","9":"九"},addr=String(record.address||"").replace(/[0-9]/g,ch=>kanji[ch]);
  drawVerticalPdfText(ctx,addr,89*scale,30*scale,105*scale,42,75);
  drawVerticalPdfText(ctx,String(record.customer_name||"")+" 様",53*scale,45*scale,90*scale,63,82);
