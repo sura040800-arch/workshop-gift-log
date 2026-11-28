@@ -207,79 +207,67 @@ client.auth.getSession().then(({data:{session}})=>applyAuthState(session,"INITIA
 $("date").value=today();
 $("lookup").onclick=async()=>{let z=$("postal").value.replace(/\D/g,"");$("zipmsg").textContent="検索中…";if(!/^\d{7}$/.test(z)){$("zipmsg").textContent="郵便番号は7桁で入力してください。";return}try{let j=await(await fetch("https://zipcloud.ibsnet.co.jp/api/search?zipcode="+z)).json();if(!j.results)throw 0;let a=j.results[0];$("address").value=a.address1+a.address2+a.address3;$("zipmsg").textContent="住所を入力しました。番地などを追記してください。"}catch{$("zipmsg").textContent="住所が見つからないか、通信に失敗しました。"}};
 let addressOcrBusy=false;
-async function loadOcrLibrary(){
- if(window.Tesseract)return window.Tesseract;
- await new Promise((resolve,reject)=>{
-  const script=document.createElement("script");
-  script.src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
-  script.onload=resolve;script.onerror=()=>reject(new Error("文字読み取り機能を読み込めません。通信状態を確認してください。"));
-  document.head.appendChild(script);
- });
- if(!window.Tesseract)throw new Error("文字読み取り機能を利用できません。");
- return window.Tesseract;
-}
 $("addressScanBtn").onclick=()=>{if(!addressOcrBusy)$("addressScanFile").click()};
 $("addressScanFile").onchange=async e=>{
  const file=e.target.files?.[0];if(!file)return;
  const btn=$("addressScanBtn"),msg=$("addressScanMsg");
  if(!file.type.startsWith("image/")){msg.textContent="画像を選択してください。";e.target.value="";return}
  if(file.size>15*1024*1024){msg.textContent="写真は15MB以下にしてください。";e.target.value="";return}
- addressOcrBusy=true;btn.disabled=true;btn.textContent="読み取り準備中…";msg.textContent="写真を端末内で処理しています。初回は文字データの読み込みに時間がかかります。";
- let worker=null;
+ addressOcrBusy=true;btn.disabled=true;btn.textContent="読み取り準備中…";
+ msg.textContent="写真を安全な接続でOCRサービスに送信して読み取ります。写真自体は保存しません。";
  try{
-  const Tesseract=await loadOcrLibrary();
-  btn.textContent="住所を読み取り中…";
-  const result=await Tesseract.recognize(file,"jpn+eng",{logger:m=>{
-   if(m.status==="recognizing text")msg.textContent="住所を読み取り中… "+Math.round((m.progress||0)*100)+"%";
-   else if(m.status==="loading language traineddata")msg.textContent="日本語の読み取りデータを準備中…";
-  }});
-  const raw=(result.data.text||"").replace(/\r/g,"\n");
-  const normalize=v=>String(v||"").replace(/[０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0)).replace(/[　\t]+/g," ").trim();
-  const lines=(result.data.lines?.map(x=>normalize(x.text)).filter(Boolean)||raw.split("\n").map(normalize).filter(Boolean));
-  // 配送会社名や伝票の固定座標に依存せず、各社で使われる差出人欄の見出し候補を探す。
+  const session=await client.auth.getSession();
+  if(!session.data.session)throw new Error("ログインが必要です。ログインし直してください。");
+  const form=new FormData();form.append("file",file,file.name||"shipping-label.jpg");
+  btn.textContent="伝票を解析中…";
+  const {data,error}=await client.functions.invoke("address-ocr",{body:form});
+  if(error)throw new Error(error.message||"OCRサービスに接続できませんでした。");
+  if(!data||!Array.isArray(data.lines))throw new Error(data?.error||"OCR結果を取得できませんでした。");
+  const normalize=v=>String(v||"").replace(/[０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0)).replace(/[　\\t]+/g," ").trim();
+  const lines=data.lines.map(x=>normalize(x.text)).filter(Boolean);
   const senderRe=/(ご?依頼主|ご?依頼人|差出人|送り主|発送元|荷送人|ご?発送主|sender|shipper)/i;
   const recipientRe=/(お?届け先|配達先|送付先|宛先|お?受取人|受取人|配送先|recipient)/i;
   const marker=lines.findIndex(v=>senderRe.test(v));
-  // 郵便番号は見出し認識に失敗しても伝票全体から独立して検出する。
-  const wholeText=lines.join("\n");
-  const globalZip=wholeText.match(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/);
+  const allZips=[...lines.join("\\n").matchAll(/(?:〒\\s*)?(\\d{3})\\s*[-ー－]?\\s*(\\d{4})/g)];
   if(marker<0){
-   if(globalZip){
-    $("postal").value=globalZip[1]+globalZip[2];
-    $("zipmsg").textContent="郵便番号を読み取りました。住所検索で住所を補完できます。";
-    msg.textContent="ご依頼主欄の見出しは判別できませんでしたが、郵便番号は読み取りました。名前・住所・電話番号は入力していません。郵便番号がご依頼主のものか確認してください。";
+   if(allZips.length===1){
+    $("postal").value=allZips[0][1]+allZips[0][2];
+    $("zipmsg").textContent="郵便番号を読み取りました。住所検索で補完できます。";
+    msg.textContent="差出人欄の見出しを判別できませんでした。郵便番号だけ入力しました。ご依頼主の番号か必ず確認してください。名前・住所・電話番号は変更していません。";
    }else{
-    $("zipmsg").textContent="郵便番号を読み取れませんでした。";
-    msg.textContent="ご依頼主欄と郵便番号を読み取れませんでした。伝票全体が明るく写るように撮影し直してください。";
+    $("zipmsg").textContent="ご依頼主の郵便番号を特定できませんでした。";
+    msg.textContent="差出人欄を判別できませんでした。入力欄は変更していません。手入力してください。";
    }
    return;
   }
-  const first=lines[marker].replace(/^.*?(?:ご?依頼主|ご?依頼人|差出人|送り主|発送元|荷送人|ご?発送主|sender|shipper)\s*[:：]?/i,"").trim();
-  let block=[...(first?[first]:[]),...lines.slice(marker+1,marker+15)];
+  const first=lines[marker].replace(/^.*?(?:ご?依頼主|ご?依頼人|差出人|送り主|発送元|荷送人|ご?発送主|sender|shipper)\\s*[:：]?/i,"").trim();
+  let block=[...(first?[first]:[]),...lines.slice(marker+1,marker+24)];
   const stop=block.findIndex((v,i)=>i>0&&recipientRe.test(v));
   if(stop>=0)block=block.slice(0,stop);
   block=block.filter(v=>!senderRe.test(v));
-  const text=block.join("\n");
-  const zip=text.match(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/)||globalZip;
-  const phone=text.match(/(?:電話|TEL|Tel|tel|☎|連絡先)?\s*[:：]?\s*(0\d{1,4})[\sー－-]*(\d{1,4})[\sー－-]*(\d{3,4})/);
+  const joined=block.join("\\n");
+  const zip=joined.match(/(?:〒\\s*)?(\\d{3})\\s*[-ー－]?\\s*(\\d{4})/);
+  const phone=joined.match(/(?:電話|TEL|Tel|tel|☎|連絡先)?\\s*[:：]?\\s*(0\\d{1,4})[\\sー－-]*(\\d{1,4})[\\sー－-]*(\\d{3,4})/);
+  const zipLine=block.findIndex(v=>/(?:〒\\s*)?\\d{3}\\s*[-ー－]?\\s*\\d{4}/.test(v));
   const addressRe=/(北海道|東京都|京都府|大阪府|.{2,3}県|市|区|郡|町|村|丁目|番地|大字|字)/;
-  const addressLines=block.filter(v=>addressRe.test(v)&&!/(電話|TEL|〒|郵便番号)/i.test(v)&&!/0\d{1,4}[ -]?\d{1,4}[ -]?\d{3,4}/.test(v));
-  const nameLines=block.filter(v=>!/(電話|TEL|〒|郵便番号|住所|ご住所|連絡先)/i.test(v)&&!/\d{3}\s*[-ー－]?\s*\d{4}/.test(v)&&!addressLines.includes(v)&&!/^\d/.test(v));
-  const name=nameLines.join(" ").replace(/^(氏名|お名前|ご氏名|名前)\s*[:：]?\s*/,"").replace(/[　 ]*(様|殿)$/,"").trim();
-  const address=addressLines.join("").replace(/^(住所|ご住所|所在地)\s*[:：]?\s*/,"").trim();
+  const addressLines=block.filter(v=>addressRe.test(v)&&!/(電話|TEL|〒|郵便番号)/i.test(v)&&!/0\\d{1,4}[ -]?\\d{1,4}[ -]?\\d{3,4}/.test(v));
+  if(!addressLines.length&&zipLine>=0&&block[zipLine+1]&&!/(電話|TEL|\\d{2,4}-\\d{2,4})/i.test(block[zipLine+1]))addressLines.push(block[zipLine+1]);
+  const nameLines=block.filter(v=>!/(電話|TEL|〒|郵便番号|住所|ご住所|連絡先)/i.test(v)&&!/\\d{3}\\s*[-ー－]?\\s*\\d{4}/.test(v)&&!addressLines.includes(v)&&!/^\\d/.test(v)&&!phone?.[0]?.includes(v));
+  const name=nameLines.join(" ").replace(/^(氏名|お名前|ご氏名|名前)\\s*[:：]?\\s*/,"").replace(/[　 ]*(様|殿)$/," ").trim();
+  const address=addressLines.join("").replace(/^(住所|ご住所|所在地)\\s*[:：]?\\s*/,"").trim();
   const filled=[];
   if(zip){$("postal").value=zip[1]+zip[2];filled.push("郵便番号")}
   if(address){$("address").value=address;filled.push("住所")}
   if(name){$("customer").value=name;filled.push("名前")}
   if(phone){$("phone").value=phone.slice(1).filter(Boolean).join("-");filled.push("電話番号")}
-  if(!filled.length){
-   msg.textContent="差出人欄らしき部分は見つかりましたが、項目を安全に読み取れませんでした。入力欄は変更していません。";
-   return;
-  }
-  $("zipmsg").textContent=zip?"郵便番号を読み取りました。":"郵便番号は読み取れませんでした。必要なら手入力してください。";
-  msg.textContent="差出人欄から読み取りました："+filled.join("・")+"。配送会社や伝票の種類によって読み取り精度が変わるため、必ず確認してから保存してください。写真は保存していません。";
- }catch(err){msg.textContent=err.message||"読み取りに失敗しました。手入力してください。"}
- finally{if(worker){try{await worker.terminate()}catch(_){}}btn.disabled=false;btn.textContent="📷 住所を撮影して読み取る";addressOcrBusy=false;e.target.value=""}
+  if(!filled.length){msg.textContent="差出人欄は見つかりましたが、項目を安全に読み取れませんでした。入力欄は変更していません。";return}
+  $("zipmsg").textContent=zip?"郵便番号を読み取りました。":"ご依頼主の郵便番号を読み取れませんでした。手入力してください。";
+  msg.textContent="差出人欄から読み取りました："+filled.join("・")+"。写真はOCR処理のためAzureに送信されましたが、アプリには保存していません。必ず内容を確認してから保存してください。";
+ }catch(err){
+  msg.textContent=err.message||"読み取りに失敗しました。手入力してください。";
+ }finally{
+  btn.disabled=false;btn.textContent="📷 住所を撮影して読み取る";addressOcrBusy=false;e.target.value="";
+ }
 };
 async function compressPhoto(file){if(!file.type.startsWith("image/"))throw new Error("画像ファイルを選択してください。");const bmp=await createImageBitmap(file);const max=1600,scale=Math.min(1,max/Math.max(bmp.width,bmp.height));const canvas=document.createElement("canvas");canvas.width=Math.round(bmp.width*scale);canvas.height=Math.round(bmp.height*scale);const ctx=canvas.getContext("2d");ctx.drawImage(bmp,0,0,canvas.width,canvas.height);bmp.close?.();const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",0.78));if(!blob)throw new Error("写真を圧縮できませんでした。");return new File([blob],(file.name.replace(/\\.[^.]+$/,"")||"photo")+".jpg",{type:"image/jpeg",lastModified:Date.now()})}
 $("photo").onchange=async e=>{const file=e.target.files[0]||null;if(!file)return;if(file.size>15*1024*1024){alert("元写真は15MB以下にしてください。");e.target.value="";return}try{picFile=await compressPhoto(file);const u=URL.createObjectURL(picFile);$("preview").src=u;$("preview").hidden=false;if(picFile.size>5*1024*1024)throw new Error("圧縮後も5MBを超えています。別の写真を選んでください。");const kb=Math.round(picFile.size/1024);$("photoMsg").textContent="圧縮済み："+kb+"KB（最大5MB）"}catch(err){alert(err.message);e.target.value="";picFile=null}};
