@@ -221,72 +221,76 @@ function prepareOcrImages(file){
   const image=new Image(),url=URL.createObjectURL(file);
   image.onload=()=>{
    try{
-    const max=2600,scale=Math.min(2.2,max/Math.max(image.naturalWidth,image.naturalHeight));
+    const scale=Math.min(2.2,2600/Math.max(image.naturalWidth,image.naturalHeight));
     const w=Math.max(1,Math.round(image.naturalWidth*scale)),h=Math.max(1,Math.round(image.naturalHeight*scale));
     const base=document.createElement("canvas");base.width=w;base.height=h;
     const ctx=base.getContext("2d",{willReadFrequently:true});ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";ctx.drawImage(image,0,0,w,h);
     const enhanced=document.createElement("canvas");enhanced.width=w;enhanced.height=h;
-    const ectx=enhanced.getContext("2d",{willReadFrequently:true});ectx.drawImage(base,0,0);
-    const pixels=ectx.getImageData(0,0,w,h),d=pixels.data;
-    for(let i=0;i<d.length;i+=4){
-     const gray=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
-     const contrast=Math.max(0,Math.min(255,(gray-128)*1.32+128));
-     d[i]=d[i+1]=d[i+2]=contrast;
-    }
-    ectx.putImageData(pixels,0,0);
-    const crops=[];
-    const marginX=Math.round(w*0.06),marginY=Math.round(h*0.06);
-    const splitRects=[
-     [0,0,Math.ceil(w/2)+marginX,Math.ceil(h/2)+marginY],
-     [Math.floor(w/2)-marginX,0,Math.ceil(w/2)+marginX,Math.ceil(h/2)+marginY],
-     [0,Math.floor(h/2)-marginY,Math.ceil(w/2)+marginX,Math.ceil(h/2)+marginY],
-     [Math.floor(w/2)-marginX,Math.floor(h/2)-marginY,Math.ceil(w/2)+marginX,Math.ceil(h/2)+marginY]
-    ];
-    for(const [x,y,cw,ch] of splitRects){
-     const crop=document.createElement("canvas");crop.width=Math.max(1,cw);crop.height=Math.max(1,ch);
-     crop.getContext("2d").drawImage(base,x,y,cw,ch,0,0,cw,ch);
-     crops.push(crop);
-    }
-    URL.revokeObjectURL(url);resolve([enhanced,base,...crops]);
+    const ec=enhanced.getContext("2d",{willReadFrequently:true});ec.drawImage(base,0,0);
+    const px=ec.getImageData(0,0,w,h),d=px.data;
+    for(let i=0;i<d.length;i+=4){const g=.299*d[i]+.587*d[i+1]+.114*d[i+2],v=Math.max(0,Math.min(255,(g-128)*1.32+128));d[i]=d[i+1]=d[i+2]=v}
+    ec.putImageData(px,0,0);
+    const marginX=Math.round(w*.06),marginY=Math.round(h*.06);
+    const rects=[[0,0,w,h],[0,0,Math.ceil(w/2)+marginX,Math.ceil(h/2)+marginY],[Math.floor(w/2)-marginX,0,Math.ceil(w/2)+marginX,Math.ceil(h/2)+marginY],[0,Math.floor(h/2)-marginY,Math.ceil(w/2)+marginX,Math.ceil(h/2)+marginY],[Math.floor(w/2)-marginX,Math.floor(h/2)-marginY,Math.ceil(w/2)+marginX,Math.ceil(h/2)+marginY]];
+    const images=rects.map(([x,y,cw,ch],i)=>{
+     if(i===0)return {canvas:enhanced,x:0,y:0,w,h,kind:"全体"};
+     const c=document.createElement("canvas");c.width=cw;c.height=ch;c.getContext("2d").drawImage(base,x,y,cw,ch,0,0,cw,ch);
+     return {canvas:c,x,y,w:cw,h:ch,kind:"部分"};
+    });
+    URL.revokeObjectURL(url);resolve(images);
    }catch(err){URL.revokeObjectURL(url);reject(err)}
   };
-  image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("写真を読み込めませんでした。"))};
-  image.src=url;
+  image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("写真を読み込めませんでした。"))};image.src=url;
  });
 }
-function extractSenderFields(ocrLines){
+function extractSenderFields(ocrLines,imageWidth,imageHeight){
  const norm=v=>String(v||"").normalize("NFKC").replace(/[　\t]+/g," ").replace(/[‐‑‒–—―ー]/g,"-").trim();
- const lines=ocrLines.map(x=>norm(typeof x==="string"?x:x.text)).filter(Boolean);
- const compact=v=>v.replace(/\s/g,"").replace(/[‐‑‒–—―ー]/g,"-");
- const senderTerms=["ご依頼主","依頼主","ご依頼人","依頼人","ご依頼主様","差出人","送り主","送主","発送元","発送人","荷送人","荷主","ご発送主","発送主","ご依頼主欄","sender","shipper"];
- const recipientTerms=["お届け先","お届け先様","届け先","配達先","送付先","宛先","お受取人","受取人","配送先","recipient"];
- const findTerm=(v,terms)=>terms.find(t=>compact(v).toLowerCase().includes(t.toLowerCase()));
- const marker=lines.findIndex(v=>!!findTerm(v,senderTerms));
- const allZips=[...lines.join("\n").matchAll(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/g)];
- if(marker<0)return {marker:false,zip:allZips.length===1?allZips[0][1]+allZips[0][2]:"",fields:{},raw:lines};
- const first=lines[marker].replace(/.*?(?:ご?\s*依\s*頼\s*主|ご?\s*依\s*頼\s*人|差\s*出\s*人|送り主|送主|発送元|発送人|荷送人|ご?\s*発送主|sender|shipper)\s*[:：]?/i,"").trim();
- let block=[...(first?[first]:[]),...lines.slice(marker+1,marker+35)];
- const stop=block.findIndex((v,i)=>i>0&&!!findTerm(v,recipientTerms));
- if(stop>=0)block=block.slice(0,stop);
- block=block.filter(v=>!findTerm(v,senderTerms));
- const joined=block.join("\n");
- const zip=joined.match(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/);
- const phone=joined.match(/(?:電話|TEL|Tel|tel|☎|連絡先)?\s*[:：]?\s*(0\d{1,4})[\sー－-]*(\d{1,4})[\sー－-]*(\d{3,4})/);
- const zipLine=block.findIndex(v=>/(?:〒\s*)?\d{3}\s*[-ー－]?\s*\d{4}/.test(v));
- const addressRe=/(北海道|東京都|京都府|大阪府|.{2,3}県|市|区|郡|町|村|丁目|番地|大字|字)/;
- const addressLines=block.filter(v=>addressRe.test(v)&&!/(電話|TEL|〒|郵便番号)/i.test(v)&&!/0\d{1,4}[ -]?\d{1,4}[ -]?\d{3,4}/.test(v));
- if(!addressLines.length&&zipLine>=0){
-  for(const candidate of block.slice(zipLine+1,zipLine+5)){
-   if(candidate&&!/(電話|TEL|〒|\d{2,4}-\d{2,4})/i.test(candidate)){addressLines.push(candidate);break}
-  }
+ const compact=v=>v.replace(/\s/g,"").toLowerCase();
+ const senderTerms=["ご依頼主","依頼主","ご依頼人","依頼人","差出人","送り主","送主","発送元","発送人","荷送人","荷主","ご発送主","発送主","sender","shipper","from"];
+ const recipientTerms=["お届け先","届け先","配達先","送付先","宛先","お受取人","受取人","配送先","recipient","to:"];
+ const find=(v,terms)=>terms.find(t=>compact(v).includes(compact(t)));
+ const lines=ocrLines.map((x,i)=>({text:norm(typeof x==="string"?x:x.text),bbox:x?.bbox||null,confidence:Number(x?.confidence)||0,index:i})).filter(x=>x.text);
+ const anchors=lines.filter(x=>find(x.text,senderTerms));
+ if(!anchors.length)return {marker:false,fields:{},score:0};
+ const recipients=lines.filter(x=>find(x.text,recipientTerms));
+ const candidates=[];
+ for(const anchor of anchors){
+  if(!anchor.bbox)continue;
+  const ax=(anchor.bbox.x0+anchor.bbox.x1)/2,ay=(anchor.bbox.y0+anchor.bbox.y1)/2;
+  const ah=Math.max(12,anchor.bbox.y1-anchor.bbox.y0);
+  const near=lines.filter(x=>{
+   if(!x.bbox)return false;
+   const cx=(x.bbox.x0+x.bbox.x1)/2,cy=(x.bbox.y0+x.bbox.y1)/2;
+   return Math.abs(cy-ay)<=Math.max(imageHeight*.24,ah*18)&&Math.abs(cx-ax)<=imageWidth*.48;
+  }).filter(x=>{
+   const cx=(x.bbox.x0+x.bbox.x1)/2,cy=(x.bbox.y0+x.bbox.y1)/2;
+   const senderDistance=Math.hypot((cx-ax)/Math.max(1,imageWidth),(cy-ay)/Math.max(1,imageHeight));
+   return !recipients.some(r=>{
+    if(!r.bbox)return false;
+    const rx=(r.bbox.x0+r.bbox.x1)/2,ry=(r.bbox.y0+r.bbox.y1)/2;
+    const recipientDistance=Math.hypot((cx-rx)/Math.max(1,imageWidth),(cy-ry)/Math.max(1,imageHeight));
+    return recipientDistance+0.025<senderDistance;
+   });
+  })
+  const ordered=near.sort((a,b)=>{
+   const da=Math.abs(((a.bbox.y0+a.bbox.y1)/2)-ay)/Math.max(1,imageHeight)+Math.abs(((a.bbox.x0+a.bbox.x1)/2)-ax)/Math.max(1,imageWidth);
+   const db=Math.abs(((b.bbox.y0+b.bbox.y1)/2)-ay)/Math.max(1,imageHeight)+Math.abs(((b.bbox.x0+b.bbox.x1)/2)-ax)/Math.max(1,imageWidth);
+   return da-db;
+  });
+  const text=ordered.map(x=>x.text).join("\n");
+  const zipLine=ordered.find(x=>!/(電話|TEL|☎|連絡先)/i.test(x.text)&&/(?:〒|郵便番号|\b\d{3}\s*[-ー－]?\s*\d{4}\b)/.test(x.text));
+  const zip=zipLine?.text.match(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})\b/);
+  const phoneLine=ordered.find(x=>!/(〒|郵便番号)/.test(x.text)&&/(電話|TEL|☎|連絡先)/i.test(x.text)&&/^0\d{9,10}$/.test(x.text.replace(/\D/g,"")));
+  const phone=phoneLine?phoneLine.text.replace(/\D/g,""):"";
+  const addressLines=ordered.filter(x=>/(北海道|東京都|京都府|大阪府|.{2,3}県|市|区|郡|町|村|丁目|番地|大字)/.test(x.text)&&!/(電話|TEL|〒|郵便番号)/i.test(x.text));
+  let address=addressLines.sort((a,b)=>a.bbox.y0-b.bbox.y0).map(x=>x.text.replace(/^(住所|ご住所|所在地)\s*[:：]?\s*/,"")).join("");
+  address=address.replace(/[A-Za-z\[\]{}|_]+/g,"").replace(/[^一-龯ぁ-んァ-ヶー0-9０-９丁目番地号-]/g,"");
+  const nameLine=ordered.map(x=>({ ...x, clean:x.text.replace(/^(ご?依頼主様?|ご?依頼人様?|差出人|送り主|発送元|荷送人|sender|shipper|from)\s*[:：]?\s*/i,"").replace(/^[/|:\s-]*(?:FROM|SHIPPER|SENDER)?[/|:\s-]*/i,"").replace(/^(氏名|お名前|ご氏名|名前)\s*[:：]?\s*/,"").trim()})).filter(x=>x.clean&&!/(電話|TEL|〒|郵便番号|住所|ご住所|連絡先)/i.test(x.clean)&&!/(北海道|東京都|京都府|大阪府|.{2,3}県|市|区|郡|町|村|丁目|番地)/.test(x.clean)&&!/(?:〒\s*)?\d{3}\s*[-ー－]?\s*\d{4}/.test(x.clean)&&!/^0\d/.test(x.clean)&&(!find(x.text,senderTerms)||x.clean!==x.text)).sort((a,b)=>a.bbox.y0-b.bbox.y0);
+  const name=nameLine.map(x=>x.clean.replace(/[　 ]*(様|殿)$/,"")).join(" ").trim();
+  const score=(zip?5:0)+(address?4:0)+(name?2:0)+(phone?2:0)+Math.round(Math.max(0,anchor.confidence)/25);
+  candidates.push({marker:true,zip:zip?zip[1]+zip[2]:"",fields:{name,address,phone:phone||""},score});
  }
- const nameLines=block.filter(v=>!/(電話|TEL|〒|郵便番号|住所|ご住所|連絡先)/i.test(v)&&!/\d{3}\s*[-ー－]?\s*\d{4}/.test(v)&&!addressLines.includes(v)&&!/^0\d/.test(v));
- const name=nameLines.join(" ").replace(/^(氏名|お名前|ご氏名|名前)\s*[:：]?\s*/,"").replace(/[　 ]*(様|殿)$/,"").trim();
- let address=addressLines.join("").replace(/^(住所|ご住所|所在地)\s*[:：]?\s*/,"").trim();
- const addressStart=address.search(/北海道|東京都|京都府|大阪府|[一-龯]{2,3}県|[一-龯ぁ-んァ-ヶ]+市|[一-龯ぁ-んァ-ヶ]+区/);
- if(addressStart>=0)address=address.slice(addressStart);
- address=address.replace(/[A-Za-z\[\]{}|_]+/g,"").replace(/[^一-龯ぁ-んァ-ヶー0-9０-９丁目番地号-]/g,"").trim();
- return {marker:true,zip:zip?zip[1]+zip[2]:"",fields:{name,address,phone:phone?phone.slice(1).filter(Boolean).join("-"):""},raw:lines};
+ return candidates.sort((a,b)=>b.score-a.score)[0]||{marker:false,fields:{},score:0};
 }
 $("addressScanBtn").onclick=()=>{if(!addressOcrBusy)$("addressScanFile").click()};
 $("addressScanFile").onchange=async e=>{
@@ -308,21 +312,16 @@ $("addressScanFile").onchange=async e=>{
   await worker.setParameters({preserve_interword_spaces:"1",user_defined_dpi:"300",tessedit_pageseg_mode:"11"});
   btn.textContent="伝票を読み取り中…";
   const results=[];
-  await worker.setParameters({preserve_interword_spaces:"1",user_defined_dpi:"300",tessedit_pageseg_mode:"11"});
   for(let n=0;n<images.length;n++){
-   msg.textContent="伝票全体と欄ごとに読み取り中… "+(n+1)+"/"+images.length;
-   const rr=await worker.recognize(images[n]);
-   const lines=rr.data.lines?.length?rr.data.lines:(rr.data.text||"").split("\n");
-   results.push(extractSenderFields(lines));
+   msg.textContent="伝票を欄ごとに読み取り中… "+(n+1)+"/"+images.length;
+   await worker.setParameters({preserve_interword_spaces:"1",user_defined_dpi:"300",tessedit_pageseg_mode:n===0?"11":"6"});
+   const rr=await worker.recognize(images[n].canvas);
+   const lines=(rr.data.lines||[]).map(line=>{
+    const b=line.bbox;return {text:line.text,bbox:b?{x0:b.x0+images[n].x,y0:b.y0+images[n].y,x1:b.x1+images[n].x,y1:b.y1+images[n].y}:null,confidence:line.confidence};
+   });
+   results.push(extractSenderFields(lines,images[0].w,images[0].h));
   }
-  await worker.setParameters({tessedit_pageseg_mode:"6"});
-  const r2=await worker.recognize(images[0]);
-  results.push(extractSenderFields(r2.data.lines?.length?r2.data.lines:(r2.data.text||"").split("\n")));
-  const ranked=results.sort((a,b)=>{
-   const score=x=>(x.marker?5:0)+(x.zip?4:0)+(x.fields.address?3:0)+(x.fields.name?2:0)+(x.fields.phone?1:0);
-   return score(b)-score(a);
-  });
-  const best=ranked[0];
+  const best=results.sort((a,b)=>b.score-a.score)[0]||{marker:false,fields:{}};
   if(!best.marker){
    $("zipmsg").textContent="差出人欄の郵便番号を特定できませんでした。";
    msg.textContent="伝票の文字は読み取りましたが、ご依頼主欄を確実に特定できませんでした。誤入力防止のため、郵便番号を含め入力欄は変更していません。";
