@@ -262,7 +262,16 @@ function extractSenderFields(ocrLines,imageWidth,imageHeight){
    if(!x.bbox)return false;
    const cx=(x.bbox.x0+x.bbox.x1)/2,cy=(x.bbox.y0+x.bbox.y1)/2;
    return Math.abs(cy-ay)<=Math.max(imageHeight*.24,ah*18)&&Math.abs(cx-ax)<=imageWidth*.48;
-  }).filter(x=>!recipients.some(r=>r.bbox&&Math.abs(((r.bbox.x0+r.bbox.x1)/2)-((x.bbox.x0+x.bbox.x1)/2))<imageWidth*.12&&Math.abs(((r.bbox.y0+r.bbox.y1)/2)-((x.bbox.y0+x.bbox.y1)/2))<Math.max(imageHeight*.18,ah*12)));
+  }).filter(x=>{
+   const cx=(x.bbox.x0+x.bbox.x1)/2,cy=(x.bbox.y0+x.bbox.y1)/2;
+   const senderDistance=Math.hypot((cx-ax)/Math.max(1,imageWidth),(cy-ay)/Math.max(1,imageHeight));
+   return !recipients.some(r=>{
+    if(!r.bbox)return false;
+    const rx=(r.bbox.x0+r.bbox.x1)/2,ry=(r.bbox.y0+r.bbox.y1)/2;
+    const recipientDistance=Math.hypot((cx-rx)/Math.max(1,imageWidth),(cy-ry)/Math.max(1,imageHeight));
+    return recipientDistance+0.025<senderDistance;
+   });
+  })
   const ordered=near.sort((a,b)=>{
    const da=Math.abs(((a.bbox.y0+a.bbox.y1)/2)-ay)/Math.max(1,imageHeight)+Math.abs(((a.bbox.x0+a.bbox.x1)/2)-ax)/Math.max(1,imageWidth);
    const db=Math.abs(((b.bbox.y0+b.bbox.y1)/2)-ay)/Math.max(1,imageHeight)+Math.abs(((b.bbox.x0+b.bbox.x1)/2)-ax)/Math.max(1,imageWidth);
