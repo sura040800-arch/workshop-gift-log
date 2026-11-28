@@ -209,14 +209,12 @@ $("lookup").onclick=async()=>{let z=$("postal").value.replace(/\D/g,"");$("zipms
 let addressOcrBusy=false;
 async function loadOcrLibrary(){
  if(window.Tesseract)return window.Tesseract;
- await new Promise((resolve,reject)=>{
-  const script=document.createElement("script");
-  script.src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
-  script.onload=resolve;script.onerror=()=>reject(new Error("文字読み取り機能を読み込めません。通信状態を確認してください。"));
-  document.head.appendChild(script);
- });
- if(!window.Tesseract)throw new Error("文字読み取り機能を利用できません。");
- return window.Tesseract;
+ const urls=["https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js","https://unpkg.com/tesseract.js@5.1.1/dist/tesseract.min.js"];
+ let lastError;
+ for(const src of urls){
+  try{await new Promise((resolve,reject)=>{const script=document.createElement("script");script.src=src;script.async=true;script.onload=resolve;script.onerror=()=>{script.remove();reject(new Error("OCRライブラリを読み込めませんでした。"))};document.head.appendChild(script)});if(window.Tesseract)return window.Tesseract}catch(err){lastError=err}
+ }
+ throw lastError||new Error("文字読み取り機能を利用できません。");
 }
 function prepareOcrImages(file){
  return new Promise((resolve,reject)=>{
@@ -244,17 +242,15 @@ function prepareOcrImages(file){
  });
 }
 function extractSenderFields(ocrLines){
- const norm=v=>String(v||"").replace(/[０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0)).replace(/[　\t]+/g," ").trim();
+ const norm=v=>String(v||"").normalize("NFKC").replace(/[　\t]+/g," ").replace(/[‐‑‒–—―ー]/g,"-").trim();
  const lines=ocrLines.map(x=>norm(typeof x==="string"?x:x.text)).filter(Boolean);
- const senderRe=/(ご?依頼主|ご?依頼人|差出人|送り主|発送元|荷送人|ご?発送主|sender|shipper)/i;
+ const senderRe=/(ご?依頼\s*主|ご?依頼\s*人|差\s*出\s*人|送り主|送主|発送元|発送人|荷送人|ご?発送主|sender|shipper)/i;
  const recipientRe=/(お?届け先|配達先|送付先|宛先|お?受取人|受取人|配送先|recipient)/i;
  const marker=lines.findIndex(v=>senderRe.test(v));
  const allZips=[...lines.join("\n").matchAll(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/g)];
- if(marker<0){
-  return {marker:false,zip:allZips.length===1?allZips[0][1]+allZips[0][2]:"",fields:{}};
- }
- const first=lines[marker].replace(/^.*?(?:ご?依頼主|ご?依頼人|差出人|送り主|発送元|荷送人|ご?発送主|sender|shipper)\s*[:：]?/i,"").trim();
- let block=[...(first?[first]:[]),...lines.slice(marker+1,marker+22)];
+ if(marker<0)return {marker:false,zip:allZips.length===1?allZips[0][1]+allZips[0][2]:"",fields:{},raw:lines};
+ const first=lines[marker].replace(/^.*?(?:ご?依頼\s*主|ご?依頼\s*人|差\s*出\s*人|送り主|送主|発送元|発送人|荷送人|ご?発送主|sender|shipper)\s*[:：]?/i,"").trim();
+ let block=[...(first?[first]:[]),...lines.slice(marker+1,marker+30)];
  const stop=block.findIndex((v,i)=>i>0&&recipientRe.test(v));
  if(stop>=0)block=block.slice(0,stop);
  block=block.filter(v=>!senderRe.test(v));
@@ -264,11 +260,15 @@ function extractSenderFields(ocrLines){
  const zipLine=block.findIndex(v=>/(?:〒\s*)?\d{3}\s*[-ー－]?\s*\d{4}/.test(v));
  const addressRe=/(北海道|東京都|京都府|大阪府|.{2,3}県|市|区|郡|町|村|丁目|番地|大字|字)/;
  const addressLines=block.filter(v=>addressRe.test(v)&&!/(電話|TEL|〒|郵便番号)/i.test(v)&&!/0\d{1,4}[ -]?\d{1,4}[ -]?\d{3,4}/.test(v));
- if(!addressLines.length&&zipLine>=0&&block[zipLine+1]&&!/(電話|TEL|\d{2,4}-\d{2,4})/i.test(block[zipLine+1]))addressLines.push(block[zipLine+1]);
+ if(!addressLines.length&&zipLine>=0){
+  for(const candidate of block.slice(zipLine+1,zipLine+4)){
+   if(candidate&&!/(電話|TEL|〒|\d{2,4}-\d{2,4})/i.test(candidate)){addressLines.push(candidate);break}
+  }
+ }
  const nameLines=block.filter(v=>!/(電話|TEL|〒|郵便番号|住所|ご住所|連絡先)/i.test(v)&&!/\d{3}\s*[-ー－]?\s*\d{4}/.test(v)&&!addressLines.includes(v)&&!/^0\d/.test(v));
  const name=nameLines.join(" ").replace(/^(氏名|お名前|ご氏名|名前)\s*[:：]?\s*/,"").replace(/[　 ]*(様|殿)$/,"").trim();
  const address=addressLines.join("").replace(/^(住所|ご住所|所在地)\s*[:：]?\s*/,"").trim();
- return {marker:true,zip:zip?zip[1]+zip[2]:"",fields:{name,address,phone:phone?phone.slice(1).filter(Boolean).join("-"):""}};
+ return {marker:true,zip:zip?zip[1]+zip[2]:"",fields:{name,address,phone:phone?phone.slice(1).filter(Boolean).join("-"):""},raw:lines};
 }
 $("addressScanBtn").onclick=()=>{if(!addressOcrBusy)$("addressScanFile").click()};
 $("addressScanFile").onchange=async e=>{
@@ -283,7 +283,7 @@ $("addressScanFile").onchange=async e=>{
   const Tesseract=await loadOcrLibrary();
   const images=await prepareOcrImages(file);
   btn.textContent="日本語の文字データを準備中…";
-  worker=await Tesseract.createWorker("jpn+eng",1,{logger:m=>{
+  worker=await Tesseract.createWorker("jpn+eng",1,{workerPath:"https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js",corePath:"https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1",langPath:"https://tessdata.projectnaptha.com/4.0.0",logger:m=>{
    if(m.status==="loading language traineddata")msg.textContent="日本語の読み取りデータを準備中…";
    else if(m.status==="recognizing text")msg.textContent="伝票を読み取り中… "+Math.round((m.progress||0)*100)+"%";
   }});
@@ -297,6 +297,9 @@ $("addressScanFile").onchange=async e=>{
   await worker.setParameters({tessedit_pageseg_mode:"6"});
   const r2=await worker.recognize(images[0],{rotateAuto:true});
   results.push(extractSenderFields(r2.data.lines?.length?r2.data.lines:(r2.data.text||"").split("\n")));
+  await worker.setParameters({tessedit_pageseg_mode:"4"});
+  const r3=await worker.recognize(images[1],{rotateAuto:true});
+  results.push(extractSenderFields(r3.data.lines?.length?r3.data.lines:(r3.data.text||"").split("\n")));
   const ranked=results.sort((a,b)=>{
    const score=x=>(x.marker?5:0)+(x.zip?4:0)+(x.fields.address?3:0)+(x.fields.name?2:0)+(x.fields.phone?1:0);
    return score(b)-score(a);
@@ -309,7 +312,7 @@ $("addressScanFile").onchange=async e=>{
     msg.textContent="差出人欄の見出しは判別できませんでした。郵便番号だけ入力しました。ご依頼主の番号か確認してください。";
    }else{
     $("zipmsg").textContent="ご依頼主の郵便番号を読み取れませんでした。";
-    msg.textContent="差出人欄を判別できませんでした。入力欄は変更していません。明るく、伝票全体にピントを合わせて撮影してください。";
+    msg.textContent="文字は検出しましたが差出人欄を特定できませんでした。入力欄は変更していません。伝票の「ご依頼主」欄を確認して手入力してください。";
    }
    return;
   }
