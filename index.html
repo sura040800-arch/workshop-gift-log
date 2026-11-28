@@ -244,16 +244,18 @@ function prepareOcrImages(file){
 function extractSenderFields(ocrLines){
  const norm=v=>String(v||"").normalize("NFKC").replace(/[　\t]+/g," ").replace(/[‐‑‒–—―ー]/g,"-").trim();
  const lines=ocrLines.map(x=>norm(typeof x==="string"?x:x.text)).filter(Boolean);
- const senderRe=/(ご?依頼\s*主|ご?依頼\s*人|差\s*出\s*人|送り主|送主|発送元|発送人|荷送人|ご?発送主|sender|shipper)/i;
- const recipientRe=/(お?届け先|配達先|送付先|宛先|お?受取人|受取人|配送先|recipient)/i;
- const marker=lines.findIndex(v=>senderRe.test(v));
+ const compact=v=>v.replace(/\s/g,"").replace(/[‐‑‒–—―ー]/g,"-");
+ const senderTerms=["ご依頼主","依頼主","ご依頼人","依頼人","差出人","送り主","送主","発送元","発送人","荷送人","ご発送主","発送主","sender","shipper"];
+ const recipientTerms=["お届け先","届け先","配達先","送付先","宛先","お受取人","受取人","配送先","recipient"];
+ const findTerm=(v,terms)=>terms.find(t=>compact(v).toLowerCase().includes(t.toLowerCase()));
+ const marker=lines.findIndex(v=>!!findTerm(v,senderTerms));
  const allZips=[...lines.join("\n").matchAll(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/g)];
  if(marker<0)return {marker:false,zip:allZips.length===1?allZips[0][1]+allZips[0][2]:"",fields:{},raw:lines};
- const first=lines[marker].replace(/^.*?(?:ご?依頼\s*主|ご?依頼\s*人|差\s*出\s*人|送り主|送主|発送元|発送人|荷送人|ご?発送主|sender|shipper)\s*[:：]?/i,"").trim();
- let block=[...(first?[first]:[]),...lines.slice(marker+1,marker+30)];
- const stop=block.findIndex((v,i)=>i>0&&recipientRe.test(v));
+ const first=lines[marker].replace(/.*?(?:ご?\s*依\s*頼\s*主|ご?\s*依\s*頼\s*人|差\s*出\s*人|送り主|送主|発送元|発送人|荷送人|ご?\s*発送主|sender|shipper)\s*[:：]?/i,"").trim();
+ let block=[...(first?[first]:[]),...lines.slice(marker+1,marker+35)];
+ const stop=block.findIndex((v,i)=>i>0&&!!findTerm(v,recipientTerms));
  if(stop>=0)block=block.slice(0,stop);
- block=block.filter(v=>!senderRe.test(v));
+ block=block.filter(v=>!findTerm(v,senderTerms));
  const joined=block.join("\n");
  const zip=joined.match(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/);
  const phone=joined.match(/(?:電話|TEL|Tel|tel|☎|連絡先)?\s*[:：]?\s*(0\d{1,4})[\sー－-]*(\d{1,4})[\sー－-]*(\d{3,4})/);
@@ -261,7 +263,7 @@ function extractSenderFields(ocrLines){
  const addressRe=/(北海道|東京都|京都府|大阪府|.{2,3}県|市|区|郡|町|村|丁目|番地|大字|字)/;
  const addressLines=block.filter(v=>addressRe.test(v)&&!/(電話|TEL|〒|郵便番号)/i.test(v)&&!/0\d{1,4}[ -]?\d{1,4}[ -]?\d{3,4}/.test(v));
  if(!addressLines.length&&zipLine>=0){
-  for(const candidate of block.slice(zipLine+1,zipLine+4)){
+  for(const candidate of block.slice(zipLine+1,zipLine+5)){
    if(candidate&&!/(電話|TEL|〒|\d{2,4}-\d{2,4})/i.test(candidate)){addressLines.push(candidate);break}
   }
  }
@@ -270,7 +272,7 @@ function extractSenderFields(ocrLines){
  let address=addressLines.join("").replace(/^(住所|ご住所|所在地)\s*[:：]?\s*/,"").trim();
  const addressStart=address.search(/北海道|東京都|京都府|大阪府|[一-龯]{2,3}県|[一-龯ぁ-んァ-ヶ]+市|[一-龯ぁ-んァ-ヶ]+区/);
  if(addressStart>=0)address=address.slice(addressStart);
- address=address.replace(/[A-Za-z\\[\\]{}|_]+/g,"").replace(/[^一-龯ぁ-んァ-ヶー0-9０-９丁目番地号-]/g,"").trim();
+ address=address.replace(/[A-Za-z\[\]{}|_]+/g,"").replace(/[^一-龯ぁ-んァ-ヶー0-9０-９丁目番地号-]/g,"").trim();
  return {marker:true,zip:zip?zip[1]+zip[2]:"",fields:{name,address,phone:phone?phone.slice(1).filter(Boolean).join("-"):""},raw:lines};
 }
 $("addressScanBtn").onclick=()=>{if(!addressOcrBusy)$("addressScanFile").click()};
@@ -303,6 +305,9 @@ $("addressScanFile").onchange=async e=>{
   await worker.setParameters({tessedit_pageseg_mode:"4"});
   const r3=await worker.recognize(images[1],{rotateAuto:true});
   results.push(extractSenderFields(r3.data.lines?.length?r3.data.lines:(r3.data.text||"").split("\n")));
+  await worker.setParameters({tessedit_pageseg_mode:"12"});
+  const r4=await worker.recognize(images[0],{rotateAuto:true});
+  results.push(extractSenderFields(r4.data.lines?.length?r4.data.lines:(r4.data.text||"").split("\n")));
   const ranked=results.sort((a,b)=>{
    const score=x=>(x.marker?5:0)+(x.zip?4:0)+(x.fields.address?3:0)+(x.fields.name?2:0)+(x.fields.phone?1:0);
    return score(b)-score(a);
