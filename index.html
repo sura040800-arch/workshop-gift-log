@@ -223,12 +223,12 @@ $("addressScanFile").onchange=async e=>{
   const {data,error}=await client.functions.invoke("address-ocr",{body:form});
   if(error)throw new Error(error.message||"OCRサービスに接続できませんでした。");
   if(!data||!Array.isArray(data.lines))throw new Error(data?.error||"OCR結果を取得できませんでした。");
-  const normalize=v=>String(v||"").replace(/[０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0)).replace(/[　\\t]+/g," ").trim();
+  const normalize=v=>String(v||"").replace(/[０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0)).replace(/[　\t]+/g," ").trim();
   const lines=data.lines.map(x=>normalize(x.text)).filter(Boolean);
   const senderRe=/(ご?依頼主|ご?依頼人|差出人|送り主|発送元|荷送人|ご?発送主|sender|shipper)/i;
   const recipientRe=/(お?届け先|配達先|送付先|宛先|お?受取人|受取人|配送先|recipient)/i;
   const marker=lines.findIndex(v=>senderRe.test(v));
-  const allZips=[...lines.join("\\n").matchAll(/(?:〒\\s*)?(\\d{3})\\s*[-ー－]?\\s*(\\d{4})/g)];
+  const allZips=[...lines.join("\n").matchAll(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/g)];
   if(marker<0){
    if(allZips.length===1){
     $("postal").value=allZips[0][1]+allZips[0][2];
@@ -240,21 +240,21 @@ $("addressScanFile").onchange=async e=>{
    }
    return;
   }
-  const first=lines[marker].replace(/^.*?(?:ご?依頼主|ご?依頼人|差出人|送り主|発送元|荷送人|ご?発送主|sender|shipper)\\s*[:：]?/i,"").trim();
+  const first=lines[marker].replace(/^.*?(?:ご?依頼主|ご?依頼人|差出人|送り主|発送元|荷送人|ご?発送主|sender|shipper)\s*[:：]?/i,"").trim();
   let block=[...(first?[first]:[]),...lines.slice(marker+1,marker+24)];
   const stop=block.findIndex((v,i)=>i>0&&recipientRe.test(v));
   if(stop>=0)block=block.slice(0,stop);
   block=block.filter(v=>!senderRe.test(v));
-  const joined=block.join("\\n");
-  const zip=joined.match(/(?:〒\\s*)?(\\d{3})\\s*[-ー－]?\\s*(\\d{4})/);
-  const phone=joined.match(/(?:電話|TEL|Tel|tel|☎|連絡先)?\\s*[:：]?\\s*(0\\d{1,4})[\\sー－-]*(\\d{1,4})[\\sー－-]*(\\d{3,4})/);
-  const zipLine=block.findIndex(v=>/(?:〒\\s*)?\\d{3}\\s*[-ー－]?\\s*\\d{4}/.test(v));
+  const joined=block.join("\n");
+  const zip=joined.match(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/);
+  const phone=joined.match(/(?:電話|TEL|Tel|tel|☎|連絡先)?\s*[:：]?\s*(0\d{1,4})[\sー－-]*(\d{1,4})[\sー－-]*(\d{3,4})/);
+  const zipLine=block.findIndex(v=>/(?:〒\s*)?\d{3}\s*[-ー－]?\s*\d{4}/.test(v));
   const addressRe=/(北海道|東京都|京都府|大阪府|.{2,3}県|市|区|郡|町|村|丁目|番地|大字|字)/;
-  const addressLines=block.filter(v=>addressRe.test(v)&&!/(電話|TEL|〒|郵便番号)/i.test(v)&&!/0\\d{1,4}[ -]?\\d{1,4}[ -]?\\d{3,4}/.test(v));
-  if(!addressLines.length&&zipLine>=0&&block[zipLine+1]&&!/(電話|TEL|\\d{2,4}-\\d{2,4})/i.test(block[zipLine+1]))addressLines.push(block[zipLine+1]);
-  const nameLines=block.filter(v=>!/(電話|TEL|〒|郵便番号|住所|ご住所|連絡先)/i.test(v)&&!/\\d{3}\\s*[-ー－]?\\s*\\d{4}/.test(v)&&!addressLines.includes(v)&&!/^\\d/.test(v)&&!phone?.[0]?.includes(v));
-  const name=nameLines.join(" ").replace(/^(氏名|お名前|ご氏名|名前)\\s*[:：]?\\s*/,"").replace(/[　 ]*(様|殿)$/," ").trim();
-  const address=addressLines.join("").replace(/^(住所|ご住所|所在地)\\s*[:：]?\\s*/,"").trim();
+  const addressLines=block.filter(v=>addressRe.test(v)&&!/(電話|TEL|〒|郵便番号)/i.test(v)&&!/0\d{1,4}[ -]?\d{1,4}[ -]?\d{3,4}/.test(v));
+  if(!addressLines.length&&zipLine>=0&&block[zipLine+1]&&!/(電話|TEL|\d{2,4}-\d{2,4})/i.test(block[zipLine+1]))addressLines.push(block[zipLine+1]);
+  const nameLines=block.filter(v=>!/(電話|TEL|〒|郵便番号|住所|ご住所|連絡先)/i.test(v)&&!/\d{3}\s*[-ー－]?\s*\d{4}/.test(v)&&!addressLines.includes(v)&&!/^\d/.test(v)&&!phone?.[0]?.includes(v));
+  const name=nameLines.join(" ").replace(/^(氏名|お名前|ご氏名|名前)\s*[:：]?\s*/,"").replace(/[　 ]*(様|殿)$/," ").trim();
+  const address=addressLines.join("").replace(/^(住所|ご住所|所在地)\s*[:：]?\s*/,"").trim();
   const filled=[];
   if(zip){$("postal").value=zip[1]+zip[2];filled.push("郵便番号")}
   if(address){$("address").value=address;filled.push("住所")}
