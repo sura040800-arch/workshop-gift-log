@@ -279,7 +279,7 @@ function extractSenderFields(ocrLines,imageWidth,imageHeight){
   });
   const text=ordered.map(x=>x.text).join("\n");
   const zip=[...text.matchAll(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/g)][0];
-  const phoneLine=ordered.find(x=>!/(?:〒\s*)?\d{3}\s*[-ー－]?\s*\d{4}/.test(x.text)&&/(電話|TEL|☎|連絡先)/i.test(x.text)&&/^0\d{9,10}$/.test(x.text.replace(/\D/g,"")));
+  const phoneLine=ordered.find(x=>!/(〒|郵便番号)/.test(x.text)&&/(電話|TEL|☎|連絡先)/i.test(x.text)&&/^0\d{9,10}$/.test(x.text.replace(/\D/g,"")));
   const phone=phoneLine?phoneLine.text.replace(/\D/g,""):"";
   const addressLines=ordered.filter(x=>/(北海道|東京都|京都府|大阪府|.{2,3}県|市|区|郡|町|村|丁目|番地|大字)/.test(x.text)&&!/(電話|TEL|〒|郵便番号)/i.test(x.text));
   let address=addressLines.sort((a,b)=>a.bbox.y0-b.bbox.y0).map(x=>x.text.replace(/^(住所|ご住所|所在地)\s*[:：]?\s*/,"")).join("");
