@@ -234,27 +234,41 @@ $("addressScanFile").onchange=async e=>{
    else if(m.status==="loading language traineddata")msg.textContent="日本語の読み取りデータを準備中…";
   }});
   const raw=(result.data.text||"").replace(/\r/g,"\n");
-  // 住所の文字列より郵便番号を優先。郵便番号データベースから町域まで自動入力する。
-  const digits=raw.replace(/[０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0));
-const postalMatch=digits.match(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/);
-  if(!postalMatch){
-   msg.textContent="郵便番号を読み取れませんでした。郵便番号部分を大きく、明るく撮影してください。住所は手入力または郵便番号検索を使えます。";
+  const normalized=raw.replace(/[０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0)).replace(/[　\t]+/g," ").split("\n").map(v=>v.trim()).filter(Boolean);
+  // 配送会社ごとの固定座標には依存せず、「ご依頼主・差出人」欄の見出しから対象範囲を特定する。
+  const senderHeads=/^(?:ご?依頼主|ご?依頼人|差出人|送り主|発送元|荷送人|ご?発送主)(?:様|欄|情報)?[:：]?$/;
+  const recipientHeads=/^(?:お?届け先|お?届け先様|配達先|送付先|宛先|お?受取人|受取人|配送先|お?届け先住所)(?:欄|情報)?[:：]?$/;
+  let start=normalized.findIndex(v=>senderHeads.test(v.replace(/[：:＊*]/g,"")));
+  if(start<0){
+   start=normalized.findIndex(v=>/(ご依頼主|依頼主|差出人|送り主|発送元|荷送人)/.test(v));
+  }
+  if(start<0){
+   msg.textContent="「ご依頼主・差出人」の欄を特定できませんでした。伝票全体が写るように撮影し直してください。入力欄は変更していません。";
    return;
   }
-  const zip=postalMatch[1]+postalMatch[2];
-  $("postal").value=zip;
-  msg.textContent="郵便番号 "+postalMatch[1]+"-"+postalMatch[2]+" を読み取りました。住所を検索中…";
-  const response=await fetch("https://zipcloud.ibsnet.co.jp/api/search?zipcode="+zip);
-  if(!response.ok)throw new Error("郵便番号検索サービスに接続できません。");
-  const json=await response.json();
-  if(!json.results?.[0]){
-   msg.textContent="郵便番号は読み取れましたが、住所データが見つかりません。住所を手入力してください。";
+  let section=normalized.slice(start+1);
+  const stop=section.findIndex(v=>recipientHeads.test(v.replace(/[：:＊*]/g,"")) || /^(お届け先|届け先|配達先|送付先|宛先)/.test(v));
+  if(stop>=0)section=section.slice(0,stop);
+  section=section.filter(v=>!/(ご依頼主|依頼主|差出人|送り主|発送元|荷送人)/.test(v));
+  const sectionText=section.join("\n");
+  const postalMatch=sectionText.match(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/);
+  const phoneMatch=sectionText.match(/(?:電話|TEL|Tel|tel|☎|連絡先)?\s*[:：]?\s*(0\d{1,4})[\sー－-]*(\d{1,4})[\sー－-]*(\d{3,4})/);
+  const addressPattern=/(北海道|東京都|京都府|大阪府|.{2,3}県|市|区|郡|町|村|丁目|番地|番|号|大字|字)/;
+  const addressLines=section.filter(v=>addressPattern.test(v) && !/(電話|TEL|〒|郵便番号)/i.test(v));
+  const nameLines=section.filter(v=>!/(電話|TEL|〒|郵便番号)/i.test(v) && !/\d{3}\s*[-ー－]?\s*\d{4}/.test(v) && !addressLines.includes(v));
+  const name=nameLines.join(" ").replace(/^(氏名|お名前|ご氏名|名前)\s*[:：]?\s*/,"").trim();
+  const address=addressLines.join("").replace(/^(住所|ご住所|所在地)\s*[:：]?\s*/,"").trim();
+  let filled=[];
+  if(postalMatch){$("postal").value=postalMatch[1]+postalMatch[2];filled.push("郵便番号")}
+  if(address){$("address").value=address;filled.push("住所")}
+  if(name){$("customer").value=name.replace(/[　 ]*(様|殿)$/,"").trim();filled.push("名前")}
+  if(phoneMatch){$("phone").value=phoneMatch.slice(1).filter(Boolean).join("-");filled.push("電話番号")}
+  if(!filled.length){
+   msg.textContent="ご依頼主欄は見つかりましたが、項目を読み取れませんでした。文字がはっきり写るように撮影し直してください。";
    return;
   }
-  const a=json.results[0];
-  $("address").value=a.address1+a.address2+a.address3;
-  $("zipmsg").textContent="郵便番号から住所を自動入力しました。番地・建物名を追記してください。";
-  msg.textContent="読み取り完了。郵便番号と住所を確認し、必要なら修正してください。撮影写真は保存していません。";
+  $("zipmsg").textContent=postalMatch?"郵便番号を読み取りました。":"郵便番号は読み取れませんでした。必要なら手入力してください。";
+  msg.textContent="ご依頼主欄から読み取りました："+filled.join("・")+"。入力内容を確認して保存してください。読み取れない項目は変更していません。写真は保存していません。";
  }catch(err){msg.textContent=err.message||"読み取りに失敗しました。手入力してください。"}
  finally{if(worker){try{await worker.terminate()}catch(_){}}btn.disabled=false;btn.textContent="📷 住所を撮影して読み取る";addressOcrBusy=false;e.target.value=""}
 };
