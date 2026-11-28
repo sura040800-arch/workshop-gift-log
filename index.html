@@ -240,18 +240,27 @@ $("addressScanFile").onchange=async e=>{
   const senderRe=/(ご?依頼主|ご?依頼人|差出人|送り主|発送元|荷送人|ご?発送主|sender|shipper)/i;
   const recipientRe=/(お?届け先|配達先|送付先|宛先|お?受取人|受取人|配送先|recipient)/i;
   const marker=lines.findIndex(v=>senderRe.test(v));
+  // 郵便番号は見出し認識に失敗しても伝票全体から独立して検出する。
+  const wholeText=lines.join("\n");
+  const globalZip=wholeText.match(/(?:〒\\s*)?(\\d{3})\\s*[-ー－]?\\s*(\\d{4})/);
   if(marker<0){
-   msg.textContent="差出人欄の見出しを判別できませんでした。伝票全体を明るく撮影してください。入力欄は変更していません。";
+   if(globalZip){
+    $("postal").value=globalZip[1]+globalZip[2];
+    $("zipmsg").textContent="郵便番号を読み取りました。住所検索で住所を補完できます。";
+    msg.textContent="ご依頼主欄の見出しは判別できませんでしたが、郵便番号は読み取りました。名前・住所・電話番号は入力していません。郵便番号がご依頼主のものか確認してください。";
+   }else{
+    $("zipmsg").textContent="郵便番号を読み取れませんでした。";
+    msg.textContent="ご依頼主欄と郵便番号を読み取れませんでした。伝票全体が明るく写るように撮影し直してください。";
+   }
    return;
   }
-  // 見出しが行の途中にある場合も拾い、次の宛先欄・別ブロック見出しで区切る。
-  const first=lines[marker].replace(/^.*?(?:ご?依頼主|ご?依頼人|差出人|送り主|発送元|荷送人|ご?発送主|sender|shipper)\s*[:：]?/i,"").trim();
+  const first=lines[marker].replace(/^.*?(?:ご?依頼主|ご?依頼人|差出人|送り主|発送元|荷送人|ご?発送主|sender|shipper)\\s*[:：]?/i,"").trim();
   let block=[...(first?[first]:[]),...lines.slice(marker+1,marker+15)];
   const stop=block.findIndex((v,i)=>i>0&&recipientRe.test(v));
   if(stop>=0)block=block.slice(0,stop);
   block=block.filter(v=>!senderRe.test(v));
   const text=block.join("\n");
-  const zip=text.match(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/);
+  const zip=text.match(/(?:〒\\s*)?(\\d{3})\\s*[-ー－]?\\s*(\\d{4})/)||globalZip;
   const phone=text.match(/(?:電話|TEL|Tel|tel|☎|連絡先)?\s*[:：]?\s*(0\d{1,4})[\sー－-]*(\d{1,4})[\sー－-]*(\d{3,4})/);
   const addressRe=/(北海道|東京都|京都府|大阪府|.{2,3}県|市|区|郡|町|村|丁目|番地|大字|字)/;
   const addressLines=block.filter(v=>addressRe.test(v)&&!/(電話|TEL|〒|郵便番号)/i.test(v)&&!/0\d{1,4}[ -]?\d{1,4}[ -]?\d{3,4}/.test(v));
