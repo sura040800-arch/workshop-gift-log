@@ -35,7 +35,7 @@
 <section id="form" class="view"><div class="card"><h2 id="formTitle">いただき物を登録</h2><p class="hint">必須：品物・お客様・いただいた日</p><form id="giftForm"><div class="formgrid">
 <div><label>品物 *</label><input id="item" required placeholder="例：焼き菓子"></div><div><label>お客様 *</label><input id="customer" required placeholder="お客様のお名前"></div><div><label>いただいた日 *</label><input id="date" type="date" required></div>
 <div class="span2"><label>お客様の郵便番号</label><div class="row"><input class="grow" id="postal" inputmode="numeric" placeholder="6170002"><button class="secondary" type="button" id="lookup">住所検索</button></div><div id="zipmsg" class="hint">郵便番号7桁で検索できます。</div></div>
-<div class="span2"><label>お客様の住所</label><div class="row"><button class="secondary grow" type="button" id="addressScanBtn">📷 住所を撮影して読み取る</button><input id="addressScanFile" type="file" accept="image/*" capture="environment" hidden></div><p id="addressScanMsg" class="hint">住所が写るように撮影してください。写真は読み取りだけに使い、保存しません。</p><textarea id="address" placeholder="番地・建物名を追記"></textarea></div><div><label>お客様の電話番号</label><input id="phone" type="tel" placeholder="075-000-0000"></div><div><label>受け取った人</label><input id="receiver" placeholder="スタッフ名"></div>
+<div class="span2"><label>お客様の住所</label><div class="row"><button class="secondary grow" type="button" id="addressScanBtn">📷 住所を撮影して読み取る</button><input id="addressScanFile" type="file" accept="image/*" capture="environment" hidden></div><p id="addressScanMsg" class="hint">縦向き・横向きどちらでも撮影できます。伝票全体と「ご依頼主」欄がはっきり写るように撮影してください。写真は読み取りだけに使い、保存しません。</p><textarea id="address" placeholder="番地・建物名を追記"></textarea></div><div><label>お客様の電話番号</label><input id="phone" type="tel" placeholder="075-000-0000"></div><div><label>受け取った人</label><input id="receiver" placeholder="スタッフ名"></div>
 <div class="span2"><label>頂き物の処遇</label><textarea id="disposition" placeholder="例：工房で保管、展示に使用、スタッフに配布 など"></textarea></div><div class="span2"><label>備考</label><textarea id="notes" placeholder="その他の補足や申し送り"></textarea></div><div class="span2"><label>実物の写真</label><div class="photo"><input id="photo" type="file" accept="image/*" capture="environment"><img id="preview" hidden><p id="photoMsg" class="hint">写真は保存前に自動圧縮されます。元写真は15MB以下。</p></div></div><div class="span2"><label>お礼状</label><select id="thanks"><option value="pending">未送付</option><option value="done">送付済み</option></select></div></div><button class="primary" id="saveBtn">保存する</button><button class="secondary" type="button" id="clear" style="width:100%;margin-top:8px">入力をクリア</button></form></div></section>
 <section id="detail" class="view"><div class="card" id="detailBody"></div><button class="secondary" id="back" style="width:100%">一覧に戻る</button></section>
 <section id="admin" class="view" hidden><div class="card"><h2>スタッフ管理</h2><p class="hint">メールアドレスを入力すると、スタッフに招待メールを送信します。</p><label>招待するスタッフのメールアドレス</label><input id="staffInviteEmail" type="email" placeholder="staff@example.com" autocomplete="email"><button class="primary" id="inviteStaffBtn" style="margin-top:10px">スタッフを招待</button><p id="inviteStaffMsg" class="hint"></p><button class="secondary" id="reloadStaff" style="width:100%;margin-top:10px">スタッフ一覧を更新</button><div id="staffRows" style="margin-top:12px"></div></div><div class="card"><h2>クラウド使用量</h2><p class="hint">管理者だけが確認できます。写真保存容量とデータベース容量を表示します。</p><button class="secondary" id="usageReload" style="width:100%">使用量を更新</button><div id="usageView" class="hint" style="margin-top:12px">未取得</div><button class="secondary" id="restoreBackup" type="button" style="width:100%;margin-top:12px">バックアップから復元</button><input id="restoreFile" type="file" accept="application/json,.json" hidden><div style="border-top:1px solid #ddd;margin-top:18px;padding-top:16px"><h3>古い記録をまとめて削除</h3><p class="hint">指定日より前の記録をまとめて削除します。写真も一緒に削除されます。削除後は元に戻せません。</p><label for="bulkDeleteBefore">この日付より前の記録を削除</label><input id="bulkDeleteBefore" type="date"><button class="secondary" id="bulkDeletePreview" type="button" style="width:100%;margin-top:10px">削除対象を確認</button><p id="bulkDeleteInfo" class="hint" style="white-space:pre-line;margin-top:10px">日付を選んで削除対象を確認してください。</p><button class="secondary" id="bulkDeleteRun" type="button" disabled style="width:100%;margin-top:8px;color:#a22">対象をまとめて削除</button></div></div>
@@ -267,7 +267,10 @@ function extractSenderFields(ocrLines){
  }
  const nameLines=block.filter(v=>!/(電話|TEL|〒|郵便番号|住所|ご住所|連絡先)/i.test(v)&&!/\d{3}\s*[-ー－]?\s*\d{4}/.test(v)&&!addressLines.includes(v)&&!/^0\d/.test(v));
  const name=nameLines.join(" ").replace(/^(氏名|お名前|ご氏名|名前)\s*[:：]?\s*/,"").replace(/[　 ]*(様|殿)$/,"").trim();
- const address=addressLines.join("").replace(/^(住所|ご住所|所在地)\s*[:：]?\s*/,"").trim();
+ let address=addressLines.join("").replace(/^(住所|ご住所|所在地)\s*[:：]?\s*/,"").trim();
+ const addressStart=address.search(/北海道|東京都|京都府|大阪府|[一-龯]{2,3}県|[一-龯ぁ-んァ-ヶ]+市|[一-龯ぁ-んァ-ヶ]+区/);
+ if(addressStart>=0)address=address.slice(addressStart);
+ address=address.replace(/[A-Za-z\\[\\]{}|_]+/g,"").replace(/[^一-龯ぁ-んァ-ヶー0-9０-９丁目番地号-]/g,"").trim();
  return {marker:true,zip:zip?zip[1]+zip[2]:"",fields:{name,address,phone:phone?phone.slice(1).filter(Boolean).join("-"):""},raw:lines};
 }
 $("addressScanBtn").onclick=()=>{if(!addressOcrBusy)$("addressScanFile").click()};
@@ -323,7 +326,7 @@ $("addressScanFile").onchange=async e=>{
   if(f.name){$("customer").value=f.name;filled.push("名前")}
   if(f.phone){$("phone").value=f.phone;filled.push("電話番号")}
   $("zipmsg").textContent=best.zip?"郵便番号を読み取りました。":"ご依頼主の郵便番号を読み取れませんでした。手入力してください。";
-  msg.textContent=filled.length?"差出人欄から読み取りました："+filled.join("・")+"。端末内で処理し、写真は保存・送信していません。誤認識がないか確認してから保存してください。":"差出人欄は見つかりましたが項目を読み取れませんでした。入力欄は変更していません。";
+  msg.textContent=filled.length?"差出人欄から候補を読み取りました："+filled.join("・")+"。端末内で処理し、写真は保存・送信していません。読み取り候補です。特に郵便番号・住所・名前を必ず確認し、違っていれば修正してから保存してください。":"差出人欄は見つかりましたが項目を読み取れませんでした。入力欄は変更していません。";
  }catch(err){
   msg.textContent=err.message||"読み取りに失敗しました。手入力してください。";
  }finally{
