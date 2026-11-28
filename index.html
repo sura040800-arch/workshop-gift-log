@@ -246,7 +246,8 @@ $("addressScanFile").onchange=async e=>{
    msg.textContent="「ご依頼主・差出人」の欄を特定できませんでした。伝票全体が写るように撮影し直してください。入力欄は変更していません。";
    return;
   }
-  let section=normalized.slice(start+1);
+  const senderRemainder=normalized[start].replace(/.*?(?:ご?依頼主|ご?依頼人|差出人|送り主|発送元|荷送人)[:：]?/,"").trim();
+  let section=[...(senderRemainder?[senderRemainder]:[]),...normalized.slice(start+1)];
   const stop=section.findIndex(v=>recipientHeads.test(v.replace(/[：:＊*]/g,"")) || /^(お届け先|届け先|配達先|送付先|宛先)/.test(v));
   if(stop>=0)section=section.slice(0,stop);
   section=section.filter(v=>!/(ご依頼主|依頼主|差出人|送り主|発送元|荷送人)/.test(v));
