@@ -244,8 +244,8 @@ function prepareOcrImages(file){
  });
 }
 function extractSenderFields(ocrLines,imageWidth,imageHeight){
- const norm=v=>String(v||"").normalize("NFKC").replace(/[　\\t]+/g," ").replace(/[‐‑‒–—―ー]/g,"-").trim();
- const compact=v=>v.replace(/\\s/g,"").toLowerCase();
+ const norm=v=>String(v||"").normalize("NFKC").replace(/[　\t]+/g," ").replace(/[‐‑‒–—―ー]/g,"-").trim();
+ const compact=v=>v.replace(/\s/g,"").toLowerCase();
  const senderTerms=["ご依頼主","依頼主","ご依頼人","依頼人","差出人","送り主","送主","発送元","発送人","荷送人","荷主","ご発送主","発送主","sender","shipper","from"];
  const recipientTerms=["お届け先","届け先","配達先","送付先","宛先","お受取人","受取人","配送先","recipient","to:"];
  const find=(v,terms)=>terms.find(t=>compact(v).includes(compact(t)));
@@ -268,14 +268,14 @@ function extractSenderFields(ocrLines,imageWidth,imageHeight){
    const db=Math.abs(((b.bbox.y0+b.bbox.y1)/2)-ay)/Math.max(1,imageHeight)+Math.abs(((b.bbox.x0+b.bbox.x1)/2)-ax)/Math.max(1,imageWidth);
    return da-db;
   });
-  const text=ordered.map(x=>x.text).join("\\n");
-  const zip=[...text.matchAll(/(?:〒\\s*)?(\\d{3})\\s*[-ー－]?\\s*(\\d{4})/g)][0];
-  const phone=text.match(/(?:電話|TEL|Tel|tel|☎|連絡先)?\\s*[:：]?\\s*(0\\d{1,4})[\\sー－-]*(\\d{1,4})[\\sー－-]*(\\d{3,4})/);
+  const text=ordered.map(x=>x.text).join("\n");
+  const zip=[...text.matchAll(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/g)][0];
+  const phone=text.match(/(?:電話|TEL|Tel|tel|☎|連絡先)?\s*[:：]?\s*(0\d{1,4})[\sー－-]*(\d{1,4})[\sー－-]*(\d{3,4})/);
   const addressLines=ordered.filter(x=>/(北海道|東京都|京都府|大阪府|.{2,3}県|市|区|郡|町|村|丁目|番地|大字)/.test(x.text)&&!/(電話|TEL|〒|郵便番号)/i.test(x.text));
-  let address=addressLines.sort((a,b)=>a.bbox.y0-b.bbox.y0).map(x=>x.text.replace(/^(住所|ご住所|所在地)\\s*[:：]?\\s*/,"")).join("");
-  address=address.replace(/[A-Za-z\\[\\]{}|_]+/g,"").replace(/[^一-龯ぁ-んァ-ヶー0-9０-９丁目番地号-]/g,"");
-  const nameLine=ordered.filter(x=>!/(電話|TEL|〒|郵便番号|住所|ご住所|連絡先)/i.test(x.text)&&!/(北海道|東京都|京都府|大阪府|.{2,3}県|市|区|郡|町|村|丁目|番地)/.test(x.text)&&!/(?:〒\\s*)?\\d{3}\\s*[-ー－]?\\s*\\d{4}/.test(x.text)&&!/^0\\d/.test(x.text)).sort((a,b)=>a.bbox.y0-b.bbox.y0);
-  const name=nameLine.map(x=>x.text.replace(/^(氏名|お名前|ご氏名|名前)\\s*[:：]?\\s*/,"").replace(/[　 ]*(様|殿)$/,"")).join(" ").trim();
+  let address=addressLines.sort((a,b)=>a.bbox.y0-b.bbox.y0).map(x=>x.text.replace(/^(住所|ご住所|所在地)\s*[:：]?\s*/,"")).join("");
+  address=address.replace(/[A-Za-z\[\]{}|_]+/g,"").replace(/[^一-龯ぁ-んァ-ヶー0-9０-９丁目番地号-]/g,"");
+  const nameLine=ordered.filter(x=>!/(電話|TEL|〒|郵便番号|住所|ご住所|連絡先)/i.test(x.text)&&!/(北海道|東京都|京都府|大阪府|.{2,3}県|市|区|郡|町|村|丁目|番地)/.test(x.text)&&!/(?:〒\s*)?\d{3}\s*[-ー－]?\s*\d{4}/.test(x.text)&&!/^0\d/.test(x.text)).sort((a,b)=>a.bbox.y0-b.bbox.y0);
+  const name=nameLine.map(x=>x.text.replace(/^(氏名|お名前|ご氏名|名前)\s*[:：]?\s*/,"").replace(/[　 ]*(様|殿)$/,"")).join(" ").trim();
   const score=(zip?5:0)+(address?4:0)+(name?2:0)+(phone?2:0)+Math.round(Math.max(0,anchor.confidence)/25);
   candidates.push({marker:true,zip:zip?zip[1]+zip[2]:"",fields:{name,address,phone:phone?phone.slice(1).filter(Boolean).join("-"):""},score});
  }
