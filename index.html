@@ -234,7 +234,20 @@ function prepareOcrImages(file){
      d[i]=d[i+1]=d[i+2]=contrast;
     }
     ectx.putImageData(pixels,0,0);
-    URL.revokeObjectURL(url);resolve([enhanced,base]);
+    const crops=[];
+    const marginX=Math.round(w*0.06),marginY=Math.round(h*0.06);
+    const splitRects=[
+     [0,0,Math.ceil(w/2)+marginX,Math.ceil(h/2)+marginY],
+     [Math.floor(w/2)-marginX,0,Math.ceil(w/2)+marginX,Math.ceil(h/2)+marginY],
+     [0,Math.floor(h/2)-marginY,Math.ceil(w/2)+marginX,Math.ceil(h/2)+marginY],
+     [Math.floor(w/2)-marginX,Math.floor(h/2)-marginY,Math.ceil(w/2)+marginX,Math.ceil(h/2)+marginY]
+    ];
+    for(const [x,y,cw,ch] of splitRects){
+     const crop=document.createElement("canvas");crop.width=Math.max(1,cw);crop.height=Math.max(1,ch);
+     crop.getContext("2d").drawImage(base,x,y,cw,ch,0,0,cw,ch);
+     crops.push(crop);
+    }
+    URL.revokeObjectURL(url);resolve([enhanced,base,...crops]);
    }catch(err){URL.revokeObjectURL(url);reject(err)}
   };
   image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("写真を読み込めませんでした。"))};
@@ -245,8 +258,8 @@ function extractSenderFields(ocrLines){
  const norm=v=>String(v||"").normalize("NFKC").replace(/[　\t]+/g," ").replace(/[‐‑‒–—―ー]/g,"-").trim();
  const lines=ocrLines.map(x=>norm(typeof x==="string"?x:x.text)).filter(Boolean);
  const compact=v=>v.replace(/\s/g,"").replace(/[‐‑‒–—―ー]/g,"-");
- const senderTerms=["ご依頼主","依頼主","ご依頼人","依頼人","差出人","送り主","送主","発送元","発送人","荷送人","ご発送主","発送主","sender","shipper"];
- const recipientTerms=["お届け先","届け先","配達先","送付先","宛先","お受取人","受取人","配送先","recipient"];
+ const senderTerms=["ご依頼主","依頼主","ご依頼人","依頼人","ご依頼主様","差出人","送り主","送主","発送元","発送人","荷送人","荷主","ご発送主","発送主","ご依頼主欄","sender","shipper"];
+ const recipientTerms=["お届け先","お届け先様","届け先","配達先","送付先","宛先","お受取人","受取人","配送先","recipient"];
  const findTerm=(v,terms)=>terms.find(t=>compact(v).toLowerCase().includes(t.toLowerCase()));
  const marker=lines.findIndex(v=>!!findTerm(v,senderTerms));
  const allZips=[...lines.join("\n").matchAll(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/g)];
@@ -295,33 +308,24 @@ $("addressScanFile").onchange=async e=>{
   await worker.setParameters({preserve_interword_spaces:"1",user_defined_dpi:"300",tessedit_pageseg_mode:"11"});
   btn.textContent="伝票を読み取り中…";
   const results=[];
+  await worker.setParameters({preserve_interword_spaces:"1",user_defined_dpi:"300",tessedit_pageseg_mode:"11"});
   for(let n=0;n<images.length;n++){
-   const r=await worker.recognize(images[n],{rotateAuto:true});
-   results.push(extractSenderFields(r.data.lines?.length?r.data.lines:(r.data.text||"").split("\n")));
+   msg.textContent="伝票全体と欄ごとに読み取り中… "+(n+1)+"/"+images.length;
+   const rr=await worker.recognize(images[n]);
+   const lines=rr.data.lines?.length?rr.data.lines:(rr.data.text||"").split("\n");
+   results.push(extractSenderFields(lines));
   }
   await worker.setParameters({tessedit_pageseg_mode:"6"});
-  const r2=await worker.recognize(images[0],{rotateAuto:true});
+  const r2=await worker.recognize(images[0]);
   results.push(extractSenderFields(r2.data.lines?.length?r2.data.lines:(r2.data.text||"").split("\n")));
-  await worker.setParameters({tessedit_pageseg_mode:"4"});
-  const r3=await worker.recognize(images[1],{rotateAuto:true});
-  results.push(extractSenderFields(r3.data.lines?.length?r3.data.lines:(r3.data.text||"").split("\n")));
-  await worker.setParameters({tessedit_pageseg_mode:"12"});
-  const r4=await worker.recognize(images[0],{rotateAuto:true});
-  results.push(extractSenderFields(r4.data.lines?.length?r4.data.lines:(r4.data.text||"").split("\n")));
   const ranked=results.sort((a,b)=>{
    const score=x=>(x.marker?5:0)+(x.zip?4:0)+(x.fields.address?3:0)+(x.fields.name?2:0)+(x.fields.phone?1:0);
    return score(b)-score(a);
   });
   const best=ranked[0];
   if(!best.marker){
-   if(best.zip){
-    $("postal").value=best.zip;
-    $("zipmsg").textContent="郵便番号を読み取りました。住所検索で補完できます。";
-    msg.textContent="差出人欄の見出しは判別できませんでした。郵便番号だけ入力しました。ご依頼主の番号か確認してください。";
-   }else{
-    $("zipmsg").textContent="ご依頼主の郵便番号を読み取れませんでした。";
-    msg.textContent="文字は検出しましたが差出人欄を特定できませんでした。入力欄は変更していません。伝票の「ご依頼主」欄を確認して手入力してください。";
-   }
+   $("zipmsg").textContent="差出人欄の郵便番号を特定できませんでした。";
+   msg.textContent="伝票の文字は読み取りましたが、ご依頼主欄を確実に特定できませんでした。誤入力防止のため、郵便番号を含め入力欄は変更していません。";
    return;
   }
   const f=best.fields,filled=[];
