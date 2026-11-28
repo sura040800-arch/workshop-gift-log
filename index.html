@@ -266,7 +266,8 @@ function extractSenderFields(ocrLines){
  if(marker<0)return {marker:false,zip:allZips.length===1?allZips[0][1]+allZips[0][2]:"",fields:{},raw:lines};
  const first=lines[marker].replace(/.*?(?:ご?\s*依\s*頼\s*主|ご?\s*依\s*頼\s*人|差\s*出\s*人|送り主|送主|発送元|発送人|荷送人|ご?\s*発送主|sender|shipper|from)\s*[:：]?/i,"").trim();
  let block=[...(first?[first]:[]),...lines.slice(marker+1,marker+35)];
- const markerBox=ocrLines[lines.indexOf(lines[marker])]?.bbox;
+ const markerLine=ocrLines.find(x=>norm(typeof x==="string"?x:x.text)===lines[marker]);
+ const markerBox=markerLine?.bbox;
  if(markerBox&&Number.isFinite(markerBox.y1)){
   const maxY=markerBox.y1+Math.max(180,(markerBox.y1-markerBox.y0)*22);
   block=block.filter((v,i)=>{
