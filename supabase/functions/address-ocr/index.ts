@@ -16,7 +16,8 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) return json({ error: "ログインが必要です。" }, 401);
     const projectUrl = Deno.env.get("SUPABASE_URL");
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    const publishableMap = JSON.parse(Deno.env.get("SUPABASE_PUBLISHABLE_KEYS") || "{}");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || publishableMap.default;
     if (!projectUrl || !anonKey) return json({ error: "Supabaseの認証設定が不足しています。" }, 500);
     const caller = createClient(projectUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
