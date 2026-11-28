@@ -258,14 +258,23 @@ function extractSenderFields(ocrLines){
  const norm=v=>String(v||"").normalize("NFKC").replace(/[　\t]+/g," ").replace(/[‐‑‒–—―ー]/g,"-").trim();
  const lines=ocrLines.map(x=>norm(typeof x==="string"?x:x.text)).filter(Boolean);
  const compact=v=>v.replace(/\s/g,"").replace(/[‐‑‒–—―ー]/g,"-");
- const senderTerms=["ご依頼主","依頼主","ご依頼人","依頼人","ご依頼主様","差出人","送り主","送主","発送元","発送人","荷送人","荷主","ご発送主","発送主","ご依頼主欄","sender","shipper"];
+ const senderTerms=["ご依頼主","依頼主","ご依頼人","依頼人","ご依頼主様","差出人","送り主","送主","発送元","発送人","荷送人","荷主","ご発送主","発送主","ご依頼主欄","sender","shipper","from","from:","荷送人様","差出人様"];
  const recipientTerms=["お届け先","お届け先様","届け先","配達先","送付先","宛先","お受取人","受取人","配送先","recipient"];
  const findTerm=(v,terms)=>terms.find(t=>compact(v).toLowerCase().includes(t.toLowerCase()));
  const marker=lines.findIndex(v=>!!findTerm(v,senderTerms));
  const allZips=[...lines.join("\n").matchAll(/(?:〒\s*)?(\d{3})\s*[-ー－]?\s*(\d{4})/g)];
  if(marker<0)return {marker:false,zip:allZips.length===1?allZips[0][1]+allZips[0][2]:"",fields:{},raw:lines};
- const first=lines[marker].replace(/.*?(?:ご?\s*依\s*頼\s*主|ご?\s*依\s*頼\s*人|差\s*出\s*人|送り主|送主|発送元|発送人|荷送人|ご?\s*発送主|sender|shipper)\s*[:：]?/i,"").trim();
+ const first=lines[marker].replace(/.*?(?:ご?\s*依\s*頼\s*主|ご?\s*依\s*頼\s*人|差\s*出\s*人|送り主|送主|発送元|発送人|荷送人|ご?\s*発送主|sender|shipper|from)\s*[:：]?/i,"").trim();
  let block=[...(first?[first]:[]),...lines.slice(marker+1,marker+35)];
+ const markerBox=ocrLines[lines.indexOf(lines[marker])]?.bbox;
+ if(markerBox&&Number.isFinite(markerBox.y1)){
+  const maxY=markerBox.y1+Math.max(180,(markerBox.y1-markerBox.y0)*22);
+  block=block.filter((v,i)=>{
+   if(i===0)return true;
+   const original=ocrLines.find(x=>norm(typeof x==="string"?x:x.text)===v);
+   return !original?.bbox||original.bbox.y0<=maxY;
+  });
+ }
  const stop=block.findIndex((v,i)=>i>0&&!!findTerm(v,recipientTerms));
  if(stop>=0)block=block.slice(0,stop);
  block=block.filter(v=>!findTerm(v,senderTerms));
